@@ -1,0 +1,25 @@
+{
+  "name": "db-migrations",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Database migration and seeding service for personal finance tracker",
+  "scripts": {
+    "migrate": "node dist/migrate.js",
+    "seed": "node dist/seed.js",
+    "build": "tsc && cp -r src/db/migrations dist/db/",
+    "clean": "rm -rf dist node_modules src"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "dependencies": {
+    "pg": "^8.13.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.3.3"
+  }
+}

@@ -37,6 +37,20 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin:z
 
+  # ── Database Migrations ───────────────────────────────────────────────────
+  db-migrate:
+    build:
+      context: .
+      dockerfile: db-migrations/Dockerfile
+    container_name: finance-tracker-db-migrate
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/finance_tracker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Runs migrations and exits (not a long-running service)
+    restart: "no"
+
   # ── PDF Microservice (Python/FastAPI) ─────────────────────────────────────
   pdf-service:
     build:
@@ -76,6 +90,8 @@ services:
       CLIENT_URL: ${CLIENT_URL:-http://localhost:8080}
       PDF_SERVICE_URL: http://pdf-service:5001
     depends_on:
+      db-migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       pdf-service:
