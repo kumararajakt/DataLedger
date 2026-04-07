@@ -1,0 +1,42 @@
+{
+  "name": "personal-finance-tracker",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A comprehensive personal finance tracking application",
+  "scripts": {
+    "dev": "pnpm run --parallel dev",
+    "dev:client": "pnpm --filter finance-tracker-client run dev",
+    "dev:server": "pnpm --filter finance-tracker-server run dev",
+    "dev:pdf": "pnpm --filter pdf-service run dev",
+    "build": "pnpm run --parallel build",
+    "build:client": "pnpm --filter finance-tracker-client run build",
+    "build:server": "pnpm --filter finance-tracker-server run build",
+    "build:pdf": "pnpm --filter pdf-service run build",
+    "start": "pnpm run --parallel start",
+    "start:client": "pnpm --filter finance-tracker-client run preview",
+    "start:server": "pnpm --filter finance-tracker-server run start",
+    "start:pdf": "pnpm --filter pdf-service run start",
+    "db:migrate": "pnpm --filter finance-tracker-server run db:migrate",
+    "db:seed": "pnpm --filter finance-tracker-server run db:seed",
+    "lint": "pnpm run --parallel lint",
+    "clean": "pnpm run --parallel clean",
+    "compose:up": "./compose.sh up -d",
+    "compose:up:build": "./compose.sh up -d --build",
+    "compose:down": "./compose.sh down",
+    "compose:down:volumes": "./compose.sh down -v",
+    "compose:logs": "./compose.sh logs -f",
+    "compose:logs:server": "./compose.sh logs -f server",
+    "compose:logs:client": "./compose.sh logs -f client",
+    "compose:ps": "./compose.sh ps",
+    "compose:build": "./compose.sh build"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "dependencies": {
+    "@types/pdf-parse": "^1.1.5",
+    "pdf-parse": "^2.4.5"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
