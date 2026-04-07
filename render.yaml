@@ -1,0 +1,90 @@
+# Render Infrastructure as Code
+# Docs: https://render.com/docs/infrastructure-as-code
+#
+# Deploy order: postgres → pdf-service → server → client
+# After first deploy, grab the server's public URL and set VITE_API_URL on the client service.
+
+services:
+  # ── PDF Microservice (Python/FastAPI) ─────────────────────────────────────
+  # Private — only reachable by other Render services in the same account
+  - type: pserv
+    name: finance-tracker-pdf
+    runtime: python
+    plan: free
+    rootDir: pdf-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENABLE_OCR
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+
+  # ── Backend API (Node.js/Express) ─────────────────────────────────────────
+  - type: web
+    name: finance-tracker-server
+    runtime: node
+    plan: free
+    rootDir: server
+    # Copy SQL migrations into dist/ after tsc (tsc only emits .js, not .sql)
+    buildCommand: >-
+      npm install -g pnpm@8 &&
+      pnpm install --frozen-lockfile &&
+      pnpm build &&
+      mkdir -p dist/db/migrations &&
+      cp src/db/migrations/*.sql dist/db/migrations/
+    # Migrations are idempotent — safe to run on every deploy
+    startCommand: >-
+      sh -c "node dist/db/migrate.js && node dist/db/seed.js && node dist/index.js"
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: finance-tracker-db
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: AI_ENCRYPTION_KEY
+        generateValue: true
+      - key: CLIENT_URL
+        # ⚠ Update this after the client static site is created (Render assigns the URL)
+        value: https://finance-tracker-client.onrender.com
+      - key: PDF_SERVICE_URL
+        # Render private services are reachable internally on port 10000
+        fromService:
+          name: finance-tracker-pdf
+          type: pserv
+          property: hostport
+
+  # ── Frontend (React SPA — Static Site) ────────────────────────────────────
+  - type: web
+    name: finance-tracker-client
+    runtime: static
+    plan: free
+    rootDir: client
+    buildCommand: >-
+      npm install -g pnpm@8 &&
+      pnpm install --frozen-lockfile &&
+      pnpm build
+    staticPublishPath: dist
+    # SPA routing: all paths fall back to index.html
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        # ⚠ Set this to your server's public Render URL, e.g.:
+        # https://finance-tracker-server.onrender.com
+        # Leave blank only if you proxy via a custom domain pointing to the server
+        value: https://finance-tracker-server.onrender.com
+
+databases:
+  - name: finance-tracker-db
+    databaseName: finance_tracker
+    user: financeuser
+    plan: free
