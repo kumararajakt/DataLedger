@@ -292,13 +292,10 @@ export class ImportController {
       }
 
       const userId = req.user!.userId;
-      const useAi = req.query.useAi === 'true';
 
       let parsedRows;
       try {
-        parsedRows = await parsePdfBuffer(req.file.buffer, userId, {
-          useAiFallback: !useAi,
-        });
+        parsedRows = await parsePdfBuffer(req.file.buffer);
       } catch (err) {
         res.status(400).json({
           error: 'Failed to parse PDF',
