@@ -369,3 +369,7 @@ __marimo__/
 # Documentation/planning markdown files (keep only README)
 *.md
 !README.md
+
+
+creds.json
+
