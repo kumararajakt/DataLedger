@@ -1,106 +1,89 @@
-import React, { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../../store/authStore';
-import apiClient from '../../api/client';
-import ThemeToggle from '../ui/ThemeToggle';
+import React from 'react';
+import { NavLink } from 'react-router-dom';
 import AppIcon from '../ui/AppIcon';
 
-const navItems = [
-  { path: '/', label: 'Dashboard', icon: 'dashboard' as const },
+const mainItems = [
+  { path: '/',             label: 'Dashboard',    icon: 'dashboard'    as const },
   { path: '/transactions', label: 'Transactions', icon: 'transactions' as const },
-  { path: '/investments', label: 'Investments', icon: 'investments' as const },
-  { path: '/import', label: 'Import', icon: 'import' as const },
-  { path: '/budgets', label: 'Budgets', icon: 'budgets' as const },
+  { path: '/investments',  label: 'Investments',  icon: 'investments'  as const },
+  { path: '/import',       label: 'Import',       icon: 'import'       as const },
+  { path: '/budgets',      label: 'Budgets',      icon: 'budgets'      as const },
+];
+
+const bottomItems = [
   { path: '/settings', label: 'Settings', icon: 'settings' as const },
 ];
 
-const Sidebar: React.FC = () => {
-  const { user, clearAuth } = useAuthStore();
-  const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+interface SidebarProps {
+  open: boolean;
+  onClose: () => void;
+}
 
-  const handleLogout = async () => {
-    try {
-      await apiClient.delete('/api/auth/logout');
-    } catch {
-      // ignore logout errors
-    } finally {
-      clearAuth();
-      navigate('/login');
-    }
-  };
+const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+    isActive
+      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'
+      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100'
+  }`;
 
+const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
   return (
     <>
-      <button
-        className="sidebar-toggle"
-        onClick={() => setOpen((value) => !value)}
-        aria-label={open ? 'Close navigation' : 'Open navigation'}
-      >
-        <AppIcon name={open ? 'close' : 'menu'} />
-      </button>
-      <div
-        className={`sidebar-backdrop ${open ? 'sidebar-backdrop-visible' : ''}`}
-        onClick={() => setOpen(false)}
-      />
-      <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
-        <div className="sidebar-header">
-          <div className="sidebar-logo">
-            <span className="sidebar-logo-mark">
-              <AppIcon name="trend" size={18} />
-            </span>
-            <div>
-              <span className="sidebar-logo-eyebrow">Personal wealth OS</span>
-              <span className="sidebar-logo-text">FinanceTracker</span>
-            </div>
-          </div>
-        </div>
+      {/* Mobile backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/40 z-20 sm:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
 
-        <nav className="sidebar-nav">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path === '/'}
-              className={({ isActive }) =>
-                `sidebar-nav-item ${isActive ? 'sidebar-nav-item-active' : ''}`
-              }
-              onClick={() => setOpen(false)}
-            >
-              <span className="sidebar-nav-icon">
-                <AppIcon name={item.icon} size={18} />
-              </span>
-              <span className="sidebar-nav-label">{item.label}</span>
-            </NavLink>
-          ))}
+      <aside
+        className={[
+          'fixed top-16 bottom-0 left-0 z-20',
+          'w-60 flex flex-col overflow-hidden',
+          'bg-white border-r border-slate-200',
+          'dark:bg-slate-900 dark:border-slate-700',
+          'transition-transform duration-200 ease-in-out',
+          open ? 'translate-x-0' : '-translate-x-full sm:translate-x-0',
+        ].join(' ')}
+      >
+        {/* Main nav */}
+        <nav className="flex-1 overflow-y-auto px-2 pt-4 pb-2">
+          <ul className="space-y-0.5">
+            {mainItems.map((item) => (
+              <li key={item.path}>
+                <NavLink
+                  to={item.path}
+                  end={item.path === '/'}
+                  onClick={onClose}
+                  className={navLinkClass}
+                >
+                  <AppIcon name={item.icon} size={17} />
+                  {item.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
         </nav>
 
-        <div className="sidebar-footer">
-          {user && (
-            <div className="sidebar-user">
-              <span className="sidebar-user-avatar">
-                {user.email.charAt(0).toUpperCase()}
-              </span>
-              <div className="sidebar-user-copy">
-                <span className="sidebar-user-label">Signed in</span>
-                <span className="sidebar-user-email" title={user.email}>
-                  {user.email}
-                </span>
-              </div>
-            </div>
-          )}
-          <div className="sidebar-actions">
-            <ThemeToggle />
-          </div>
-          <button
-            className="sidebar-logout"
-            onClick={handleLogout}
-            title="Logout"
-          >
-            <AppIcon name="logout" size={18} />
-            <span>Logout</span>
-          </button>
-        </div>
+        {/* Bottom nav */}
+        <nav className="px-2 pb-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <ul className="space-y-0.5">
+            {bottomItems.map((item) => (
+              <li key={item.path}>
+                <NavLink
+                  to={item.path}
+                  onClick={onClose}
+                  className={navLinkClass}
+                >
+                  <AppIcon name={item.icon} size={17} />
+                  {item.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </aside>
     </>
   );

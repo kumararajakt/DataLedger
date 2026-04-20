@@ -47,62 +47,19 @@ const Dashboard: React.FC = () => {
   const { data: recentTx }   = useTransactions({ limit: 10, page: 1 });
   const { data: dashConfig } = useDashboardConfig();
 
-  const prevMonth = () => {
-    const d = new Date(currentDate);
-    d.setMonth(d.getMonth() - 1);
-    setCurrentDate(d);
-  };
+  
 
-  const nextMonth = () => {
-    const d = new Date(currentDate);
-    d.setMonth(d.getMonth() + 1);
-    setCurrentDate(d);
-  };
-
-  const isCurrentMonth = getMonthString(currentDate) === getMonthString(new Date());
 
   const allWidgets = dashConfig?.widgets ?? FALLBACK_WIDGETS;
   const enabled    = allWidgets
     .filter((w) => w.enabled)
     .sort((a, b) => a.position - b.position);
 
-  const netSavings = report?.netSavings ?? 0;
-  const savingsPositive = netSavings >= 0;
 
   return (
     <div className="page dashboard-page">
 
-      {/* ── Top bar ─────────────────────────────────────────────── */}
-      <div className="dash-topbar">
-        <div className="dash-balance">
-          <span className="dash-balance-label">Total Balance</span>
-          <div className="dash-balance-row">
-            <span className="dash-balance-amount">{formatAmount(report?.totalIncome ?? 0)}</span>
-            <span className={`dash-balance-badge ${savingsPositive ? 'dash-badge-up' : 'dash-badge-down'}`}>
-              {savingsPositive ? '↑' : '↓'} {formatAmount(Math.abs(netSavings))} net
-            </span>
-          </div>
-        </div>
-
-        <div className="dash-topbar-right">
-          <div className="month-selector">
-            <button className="month-nav-btn" onClick={prevMonth} aria-label="Previous month">&larr;</button>
-            <span className="month-label">{formatMonthLabel(month)}</span>
-            <button
-              className="month-nav-btn"
-              onClick={nextMonth}
-              disabled={isCurrentMonth}
-              aria-label="Next month"
-            >&rarr;</button>
-          </div>
-          <Link to="/import" className="btn btn-secondary btn-sm">
-            ↑ Import
-          </Link>
-          <Link to="/transactions" className="btn btn-primary btn-sm">
-            View all
-          </Link>
-        </div>
-      </div>
+   
 
       {/* ── Widget grid ─────────────────────────────────────────── */}
       <div className="dashboard-widget-grid">
