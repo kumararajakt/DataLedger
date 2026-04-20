@@ -9,6 +9,9 @@ router.post('/register', AuthController.register);
 // POST /api/auth/login
 router.post('/login', AuthController.login);
 
+// POST /api/auth/google
+router.post('/google', AuthController.googleAuth);
+
 // POST /api/auth/refresh
 router.post('/refresh', AuthController.refresh);
 

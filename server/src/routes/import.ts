@@ -18,6 +18,16 @@ router.post(
 // POST /api/import/csv/confirm/:jobId
 router.post('/csv/confirm/:jobId', ImportController.confirmCsvImport);
 
+// POST /api/import/excel
+router.post(
+  '/excel',
+  ImportController.excelUpload.single('file'),
+  ImportController.uploadExcel
+);
+
+// POST /api/import/excel/confirm/:jobId
+router.post('/excel/confirm/:jobId', ImportController.confirmExcelImport);
+
 // ── PDF routes ─────────────────────────────────────────────────────────────
 
 // POST /api/import/pdf

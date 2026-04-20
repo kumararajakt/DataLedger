@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { GoogleLogin } from '@react-oauth/google';
 import apiClient from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { useToast } from '../components/ui/Toast';
+import AppIcon from '../components/ui/AppIcon';
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
@@ -51,6 +53,18 @@ const Register: React.FC = () => {
     }
   };
 
+  const handleGoogleSuccess = async (credentialResponse: { credential?: string }) => {
+    try {
+      const response = await apiClient.post('/api/auth/google', {
+        credential: credentialResponse.credential,
+      });
+      setAuth(response.data.user, response.data.accessToken);
+      navigate('/');
+    } catch {
+      showError('Google sign-in failed. Please try again.');
+    }
+  };
+
   const handleChange = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((f) => ({ ...f, [field]: e.target.value }));
     setErrors((er) => { const n = { ...er }; delete n[field]; return n; });
@@ -58,9 +72,27 @@ const Register: React.FC = () => {
 
   return (
     <div className="auth-page">
+      <div className="auth-hero">
+        <div className="auth-hero-badge">
+          <AppIcon name="spark" size={16} />
+          Built for modern household finance
+        </div>
+        <h1>Start with a cleaner, more intentional money system.</h1>
+        <p>
+          Create your account to organize transactions, build budget discipline, and keep
+          investment activity visible alongside day-to-day spending.
+        </p>
+        <div className="auth-feature-list">
+          <div><AppIcon name="wallet" size={16} /> Track income and expenses</div>
+          <div><AppIcon name="budgets" size={16} /> Set category budgets</div>
+          <div><AppIcon name="settings" size={16} /> Bring your own AI tools</div>
+        </div>
+      </div>
       <div className="auth-card">
         <div className="auth-logo">
-          <span>💹</span>
+          <span className="auth-logo-mark">
+            <AppIcon name="trend" size={18} />
+          </span>
           <h1>FinanceTracker</h1>
         </div>
         <h2 className="auth-title">Create your account</h2>
@@ -99,6 +131,14 @@ const Register: React.FC = () => {
             Create Account
           </Button>
         </form>
+        <div className="auth-divider"><span>or</span></div>
+        <div className="auth-google">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => showError('Google sign-in failed. Please try again.')}
+            width="100%"
+          />
+        </div>
         <p className="auth-footer">
           Already have an account?{' '}
           <Link to="/login" className="auth-link">

@@ -16,10 +16,11 @@ const fetchTransactions = async (filters: TransactionFilters): Promise<Paginated
   return response.data;
 };
 
-export const useTransactions = (filters: TransactionFilters = {}) => {
+export const useTransactions = (filters: TransactionFilters = {}, enabled: boolean = true) => {
   return useQuery({
     queryKey: ['transactions', filters],
     queryFn: () => fetchTransactions(filters),
+    enabled,
   });
 };
 
@@ -52,6 +53,20 @@ export const useDeleteTransaction = () => {
   return useMutation({
     mutationFn: (id: string) =>
       apiClient.delete(`/api/transactions/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+};
+
+export const useAutoClassify = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient
+        .post<{ data: { classified: number; total: number } }>('/api/transactions/auto-classify')
+        .then((r) => r.data.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['reports'] });

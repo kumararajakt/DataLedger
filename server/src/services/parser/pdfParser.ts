@@ -10,13 +10,19 @@ const PDF_SERVICE_URL = process.env.PDF_SERVICE_URL || "http://localhost:5001";
  * The Python service handles all parsing (structured, AI, etc.).
  * Returns ParsedRow[] from the Python service response.
  */
-export async function parsePdfBuffer(buffer: Buffer): Promise<ParsedRow[]> {
+export async function parsePdfBuffer(
+  buffer: Buffer,
+  rules?: Array<{ keyword: string; category_name: string }>
+): Promise<ParsedRow[]> {
   try {
     const formData = new FormData();
     formData.append("file", buffer, {
       filename: "statement.pdf",
       contentType: "application/pdf",
     });
+    if (rules && rules.length > 0) {
+      formData.append("rules", JSON.stringify(rules));
+    }
 
     const response = await axios.post(`${PDF_SERVICE_URL}/parse`, formData, {
       headers: formData.getHeaders(),
@@ -41,6 +47,8 @@ export async function parsePdfBuffer(buffer: Buffer): Promise<ParsedRow[]> {
         method: response.data.method ?? "pdf-service",
         bank: response.data.bank ?? "unknown",
       },
+      ...(t.suggested_category ? { suggestedCategoryName: t.suggested_category } : {}),
+      ...(t.notes ? { notes: t.notes } : {}),
     }));
 
     console.log(

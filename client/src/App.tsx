@@ -9,6 +9,7 @@ import Transactions from './pages/Transactions';
 import Budgets from './pages/Budgets';
 import Import from './pages/Import';
 import Settings from './pages/Settings';
+import Investments from './pages/Investments';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -37,6 +38,7 @@ const App: React.FC = () => {
       >
         <Route index element={<Dashboard />} />
         <Route path="transactions" element={<Transactions />} />
+        <Route path="investments" element={<Investments />} />
         <Route path="budgets" element={<Budgets />} />
         <Route path="import" element={<Import />} />
         <Route path="settings" element={<Settings />} />

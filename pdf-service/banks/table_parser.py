@@ -31,10 +31,10 @@ COLUMN_KEYWORDS = {
         "transaction remarks", "remarks", "narration", "particulars", "description", "details", "narrative"
     ],
     "debit": [
-        "withdrawal amount", "withdrawal (inr)", "withdrawal amt", "debit amount", "debit", "dr"
+        "withdrawal amount", "withdrawal (inr)", "withdrawal amt", "withdrawals", "debit amount", "debit", "dr"
     ],
     "credit": [
-        "deposit amount", "deposit (inr)", "deposit amt", "credit amount", "credit", "cr"
+        "deposit amount", "deposit (inr)", "deposit amt", "deposits", "credit amount", "credit", "cr"
     ],
     "balance": [
         "closing balance", "available balance", "balance"
@@ -62,14 +62,11 @@ def parse_table(pdf: pdfplumber.PDF) -> list[dict]:
 
     for page_idx, page in enumerate(pdf.pages):
         # Strategy 1: structured table extraction
-        table_settings = {
+        table = page.extract_table({
             "vertical_strategy": "lines",
             "horizontal_strategy": "text",
             "snap_tolerance": 4,
-        }
-
-        table = page.extract_table(table_settings)
-        print(table)
+        })
         if table and len(table) >= 2:
             transactions, score = _parse_structured_table(table)
             if transactions:

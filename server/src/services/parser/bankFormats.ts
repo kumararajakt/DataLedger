@@ -6,6 +6,8 @@ export interface ParsedRow {
   debit: number;
   credit: number;
   rawRow: Record<string, string>;
+  suggestedCategoryName?: string;  // from Python TF-IDF classifier
+  notes?: string;                  // from Python regex note generator
 }
 
 export interface BankFormat {

@@ -14,6 +14,8 @@ import EmptyState from '../components/ui/EmptyState';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useToast } from '../components/ui/Toast';
 import type { Budget } from '../types';
+import StatCard from '../components/ui/StatCard';
+import AppIcon from '../components/ui/AppIcon';
 
 const getMonthString = (date: Date) => {
   const y = date.getFullYear();
@@ -41,6 +43,9 @@ const Budgets: React.FC = () => {
   const createMutation = useCreateBudget();
   const updateMutation = useUpdateBudget();
   const deleteMutation = useDeleteBudget();
+  const totalBudget = budgets.reduce((sum, budget) => sum + budget.amount, 0);
+  const totalSpent = budgets.reduce((sum, budget) => sum + budget.spent, 0);
+  const overBudgetCount = budgets.filter((budget) => budget.spent > budget.amount).length;
 
   const isCurrentMonth = getMonthString(currentDate) === getMonthString(new Date());
 
@@ -95,7 +100,13 @@ const Budgets: React.FC = () => {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">Budgets</h1>
+        <div>
+          <p className="page-eyebrow">Guardrails</p>
+          <h1 className="page-title">Budgets</h1>
+          <p className="page-description">
+            Set category targets, monitor overruns, and keep spending aligned with plan.
+          </p>
+        </div>
         <div className="page-header-right">
           <div className="month-selector">
             <button className="month-nav-btn" onClick={prevMonth} aria-label="Previous month">
@@ -111,17 +122,24 @@ const Budgets: React.FC = () => {
               &rarr;
             </button>
           </div>
-          <Button variant="primary" onClick={handleAdd}>
-            + Add Budget
+          <Button className="btn-with-icon" variant="primary" onClick={handleAdd}>
+            <AppIcon name="budgets" size={16} />
+            Add budget
           </Button>
         </div>
+      </div>
+
+      <div className="summary-grid">
+        <StatCard label="Budgeted" value={`₹${totalBudget.toLocaleString('en-IN')}`} icon="wallet" />
+        <StatCard label="Spent" value={`₹${totalSpent.toLocaleString('en-IN')}`} icon="trend" tone="danger" />
+        <StatCard label="Over budget" value={String(overBudgetCount)} icon="spark" tone="accent" />
       </div>
 
       {isLoading ? (
         <LoadingSpinner centered />
       ) : budgets.length === 0 ? (
         <EmptyState
-          icon="💰"
+          icon={<AppIcon name="budgets" size={20} />}
           title="No budgets set"
           description="Create budget limits for your categories to track your spending."
           actionLabel="Add Budget"

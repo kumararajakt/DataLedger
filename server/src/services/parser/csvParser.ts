@@ -39,7 +39,7 @@ function parseRawCsv(buffer: Buffer): string[][] {
  * Finds the header row index by looking for rows that match known bank format columns.
  * Returns the index of the header row.
  */
-function findHeaderRow(rows: string[][]): {
+export function findHeaderRow(rows: string[][]): {
   headerIndex: number;
   format: BankFormat;
 } {
@@ -65,7 +65,7 @@ function findHeaderRow(rows: string[][]): {
  * Converts rows after the header row into Record<string, string> objects
  * using the header row as keys.
  */
-function rowsToRecords(
+export function rowsToRecords(
   rows: string[][],
   headerIndex: number,
   headers: string[]
@@ -92,7 +92,7 @@ function rowsToRecords(
 /**
  * Validates that a parsed row has meaningful data.
  */
-function isValidRow(row: ParsedRow): boolean {
+export function isValidRow(row: ParsedRow): boolean {
   if (!row.date || row.date.trim() === '') return false;
   if (!row.description || row.description.trim() === '') return false;
 
@@ -116,9 +116,12 @@ export function parseCsvBuffer(
   _options: ParseOptions = {}
 ): ParsedRow[] {
   const rawRows = parseRawCsv(buffer);
+  return parseDelimitedRows(rawRows);
+}
 
+export function parseDelimitedRows(rawRows: string[][]): ParsedRow[] {
   if (rawRows.length === 0) {
-    throw new Error('CSV file is empty');
+    throw new Error('Spreadsheet is empty');
   }
 
   const { headerIndex, format } = findHeaderRow(rawRows);
@@ -148,7 +151,7 @@ export function parseCsvBuffer(
   }
 
   if (parsedRows.length === 0) {
-    throw new Error('No valid transaction rows found in CSV');
+    throw new Error('No valid transaction rows found');
   }
 
   return parsedRows;

@@ -46,7 +46,7 @@ const BudgetCard: React.FC<BudgetCardProps> = ({ budget, onEdit, onDelete }) => 
         </div>
         <div className="budget-card-actions">
           <Button variant="ghost" size="sm" onClick={() => onEdit(budget)} title="Edit">
-            ✏️
+            Edit
           </Button>
           <Button
             variant="danger"
@@ -54,7 +54,7 @@ const BudgetCard: React.FC<BudgetCardProps> = ({ budget, onEdit, onDelete }) => 
             onClick={() => onDelete(budget.id)}
             title="Delete"
           >
-            🗑️
+            Delete
           </Button>
         </div>
       </div>

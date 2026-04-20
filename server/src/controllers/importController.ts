@@ -3,7 +3,9 @@ import multer from 'multer';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { parseCsvBuffer } from '../services/parser/csvParser';
+import { parseExcelBuffer } from '../services/parser/excelParser';
 import { parsePdfBuffer } from '../services/parser/pdfParser';
+import type { ParsedRow } from '../services/parser/bankFormats';
 import { normalizeRows, type NormalizedTransaction } from '../services/normalizer';
 import { filterDuplicates, generateHash } from '../services/dedup';
 import { categorizeTransactions } from '../services/categorizer';
@@ -69,6 +71,22 @@ const pdfUpload = multer({
   },
 });
 
+const excelUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const lower = file.originalname.toLowerCase();
+    const isExcel =
+      file.mimetype ===
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.mimetype === 'application/vnd.ms-excel' ||
+      lower.endsWith('.xlsx') ||
+      lower.endsWith('.xls');
+    if (isExcel) cb(null, true);
+    else cb(new Error('Only Excel files are allowed'));
+  },
+});
+
 // ── Shared parse → preview helper ─────────────────────────────────────────
 
 function buildPreviewRows(transactions: NormalizedTransaction[]) {
@@ -86,12 +104,23 @@ function buildPreviewRows(transactions: NormalizedTransaction[]) {
 
 async function buildPreview(
   userId: string,
-  parsedRows: Awaited<ReturnType<typeof parseCsvBuffer>>,
-  source: 'csv' | 'pdf'
+  parsedRows: ParsedRow[],
+  source: 'csv' | 'pdf',
+  catByName?: Map<string, string>
 ) {
   const normalized = normalizeRows(parsedRows);
   const { unique, duplicates } = await filterDuplicates(pool, userId, normalized);
   const categorized = await categorizeTransactions(pool, userId, unique);
+
+  // Resolve Python-suggested categories for any still-uncategorized transactions
+  if (catByName) {
+    for (const tx of categorized) {
+      if (!tx.categoryId && tx.aiCategoryName) {
+        tx.categoryId = catByName.get(tx.aiCategoryName.toLowerCase()) ?? null;
+      }
+    }
+  }
+
   const jobId = storeJob(categorized, source);
 
   return {
@@ -221,6 +250,7 @@ async function confirmJob(
 export class ImportController {
   // Multer middleware instances
   static csvUpload = csvUpload;
+  static excelUpload = excelUpload;
   static pdfUpload = pdfUpload;
 
   // POST /api/import/csv
@@ -278,6 +308,61 @@ export class ImportController {
     }
   }
 
+  // POST /api/import/excel
+  static async uploadExcel(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      cleanupExpiredJobs();
+      if (!req.file) {
+        res.status(400).json({ error: 'No file uploaded' });
+        return;
+      }
+
+      const userId = req.user!.userId;
+      let parsedRows;
+      try {
+        parsedRows = parseExcelBuffer(req.file.buffer);
+      } catch (err) {
+        res.status(400).json({
+          error: 'Failed to parse Excel file',
+          details: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+
+      const preview = await buildPreview(userId, parsedRows, 'csv');
+      res.json(preview);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // POST /api/import/excel/confirm/:jobId
+  static async confirmExcelImport(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const result = await confirmJob(
+        req.params.jobId,
+        req.user!.userId,
+        req.body?.transactions
+      );
+      res.json(result);
+    } catch (err: unknown) {
+      if (typeof err === 'object' && err !== null && 'status' in err) {
+        const e = err as { status: number; message: string };
+        res.status(e.status).json({ error: e.message });
+      } else {
+        next(err);
+      }
+    }
+  }
+
   // POST /api/import/pdf
   static async uploadPdf(
     req: Request,
@@ -293,9 +378,26 @@ export class ImportController {
 
       const userId = req.user!.userId;
 
+      // Fetch categorization rules to send to Python classifier
+      const rulesResult = await pool.query<{ keyword: string; category_name: string; category_id: string }>(
+        `SELECT cr.keyword, c.name AS category_name, c.id AS category_id
+         FROM categorization_rules cr
+         JOIN categories c ON cr.category_id = c.id
+         WHERE cr.user_id = $1 OR cr.user_id IS NULL
+         ORDER BY cr.priority DESC`,
+        [userId]
+      );
+      const classifierRules = rulesResult.rows.map((r) => ({
+        keyword: r.keyword,
+        category_name: r.category_name,
+      }));
+      const catByName = new Map(
+        rulesResult.rows.map((r) => [r.category_name.toLowerCase(), r.category_id])
+      );
+
       let parsedRows;
       try {
-        parsedRows = await parsePdfBuffer(req.file.buffer);
+        parsedRows = await parsePdfBuffer(req.file.buffer, classifierRules);
       } catch (err) {
         res.status(400).json({
           error: 'Failed to parse PDF',
@@ -304,7 +406,7 @@ export class ImportController {
         return;
       }
 
-      const preview = await buildPreview(userId, parsedRows, 'pdf');
+      const preview = await buildPreview(userId, parsedRows, 'pdf', catByName);
       res.json(preview);
     } catch (err) {
       next(err);

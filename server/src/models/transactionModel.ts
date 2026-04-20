@@ -1,6 +1,18 @@
 import { pool, withUser } from '../db/pool';
 import { rebuildMonth } from '../services/snapshotBuilder';
 
+export interface InvestmentDetails {
+  instrument_type: 'mutual_fund' | 'sip' | 'stock' | 'fd' | 'ppf' | 'nps' | 'bond' | 'gold' | 'silver';
+  instrument_name?: string;
+  units?: number;
+  quantity?: number;
+  nav_or_price?: number;
+  folio_number?: string;
+  platform?: string;
+  interest_rate?: number;
+  maturity_date?: string;
+}
+
 export interface Transaction {
   id: string;
   userId: string;
@@ -13,11 +25,20 @@ export interface Transaction {
   hash: string | null;
   rawData: Record<string, unknown> | null;
   notes: string | null;
+  investmentDetails: InvestmentDetails | null;
   createdAt: Date;
   // Joined fields
   categoryName?: string | null;
   categoryColor?: string | null;
   categoryIcon?: string | null;
+  category?: {
+    id: string;
+    name: string;
+    color: string;
+    icon: string;
+    isSystem: boolean;
+    userId: string | null;
+  };
 }
 
 export interface TransactionListFilters {
@@ -43,6 +64,8 @@ export interface CreateTransactionInput {
   amount: number;
   type: 'income' | 'expense' | 'transfer';
   categoryId?: string | null;
+  notes?: string | null;
+  investmentDetails?: InvestmentDetails | null;
 }
 
 export interface UpdateTransactionInput {
@@ -52,6 +75,7 @@ export interface UpdateTransactionInput {
   type?: 'income' | 'expense' | 'transfer';
   categoryId?: string | null;
   notes?: string | null;
+  investmentDetails?: InvestmentDetails | null;
 }
 
 export class TransactionModel {
@@ -103,7 +127,8 @@ export class TransactionModel {
     const dataResult = await withUser(userId, (client) =>
       client.query(
         `SELECT t.id, t.user_id, t.category_id, t.date, t.description,
-                t.amount, t.type, t.source, t.hash, t.raw_data, t.notes, t.created_at,
+                t.amount, t.type, t.source, t.hash, t.raw_data, t.notes,
+                t.investment_details, t.created_at,
                 c.name as category_name, c.color as category_color, c.icon as category_icon
          FROM transactions t
          LEFT JOIN categories c ON t.category_id = c.id
@@ -129,7 +154,8 @@ export class TransactionModel {
     const result = await withUser(userId, (client) =>
       client.query(
         `SELECT t.id, t.user_id, t.category_id, t.date, t.description,
-                t.amount, t.type, t.source, t.hash, t.raw_data, t.notes, t.created_at,
+                t.amount, t.type, t.source, t.hash, t.raw_data, t.notes,
+                t.investment_details, t.created_at,
                 c.name as category_name, c.color as category_color, c.icon as category_icon
          FROM transactions t
          LEFT JOIN categories c ON t.category_id = c.id
@@ -148,9 +174,11 @@ export class TransactionModel {
   ): Promise<Transaction> {
     const result = await withUser(userId, (client) =>
       client.query(
-        `INSERT INTO transactions (user_id, category_id, date, description, amount, type, source)
-         VALUES ($1, $2, $3, $4, $5, $6, 'manual')
-         RETURNING id, user_id, category_id, date, description, amount, type, source, created_at`,
+        `INSERT INTO transactions
+           (user_id, category_id, date, description, amount, type, source, notes, investment_details)
+         VALUES ($1, $2, $3, $4, $5, $6, 'manual', $7, $8)
+         RETURNING id, user_id, category_id, date, description, amount, type, source,
+                   hash, raw_data, notes, investment_details, created_at`,
         [
           userId,
           data.categoryId ?? null,
@@ -158,6 +186,8 @@ export class TransactionModel {
           data.description,
           data.amount,
           data.type,
+          data.notes ?? null,
+          data.investmentDetails ? JSON.stringify(data.investmentDetails) : null,
         ]
       )
     );
@@ -216,6 +246,10 @@ export class TransactionModel {
       setClauses.push(`notes = $${paramIndex++}`);
       values.push(updates.notes ?? null);
     }
+    if ('investmentDetails' in updates) {
+      setClauses.push(`investment_details = $${paramIndex++}`);
+      values.push(updates.investmentDetails ? JSON.stringify(updates.investmentDetails) : null);
+    }
 
     if (setClauses.length === 0) return null;
 
@@ -225,7 +259,8 @@ export class TransactionModel {
       client.query(
         `UPDATE transactions SET ${setClauses.join(', ')}
          WHERE id = $${paramIndex}
-         RETURNING id, user_id, category_id, date, description, amount, type, source, notes, created_at`,
+         RETURNING id, user_id, category_id, date, description, amount, type, source,
+                   hash, raw_data, notes, investment_details, created_at`,
         values
       )
     );
@@ -295,10 +330,21 @@ export class TransactionModel {
       hash: row.hash,
       rawData: row.raw_data,
       notes: row.notes,
+      investmentDetails: row.investment_details ?? null,
       createdAt: row.created_at,
       categoryName: row.category_name,
       categoryColor: row.category_color,
       categoryIcon: row.category_icon,
+      category: row.category_id
+        ? {
+            id: row.category_id,
+            name: row.category_name ?? '',
+            color: row.category_color ?? '#888888',
+            icon: row.category_icon ?? '',
+            isSystem: false,
+            userId: null,
+          }
+        : undefined,
     };
   }
 }

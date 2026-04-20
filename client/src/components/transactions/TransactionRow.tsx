@@ -42,7 +42,7 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
       <td className="td-desc" title={transaction.description}>
         <div>{transaction.description}</div>
         {transaction.notes && (
-          <div style={{ fontSize: '0.78rem', color: '#6366f1', marginTop: '0.2rem', fontStyle: 'italic' }}>
+          <div className="td-note">
             {transaction.notes}
           </div>
         )}
@@ -79,7 +79,7 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
           onClick={() => onEdit(transaction)}
           title="Edit"
         >
-          ✏️
+          Edit
         </Button>
         <Button
           variant="danger"
@@ -87,7 +87,7 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
           onClick={() => onDelete(transaction.id)}
           title="Delete"
         >
-          🗑️
+          Delete
         </Button>
       </td>
     </tr>

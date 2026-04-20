@@ -12,12 +12,14 @@ import budgetRoutes from './routes/budgets';
 import importRoutes from './routes/import';
 import reportRoutes from './routes/reports';
 import aiSettingsRoutes from './routes/aiSettings';
+import dashboardConfigRoutes from './routes/dashboardConfig';
 import { errorHandler } from './middleware/errorHandler';
 
 const app: Express = express();
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
 const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173';
 
+app.set("trust proxy", 1);
 // Security middleware
 app.use(helmet());
 
@@ -64,6 +66,7 @@ app.use('/api/budgets', budgetRoutes);
 app.use('/api/import', importRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings/ai', aiSettingsRoutes);
+app.use('/api/settings/dashboard', dashboardConfigRoutes);
 
 // 404 handler
 app.use((_req, res) => {

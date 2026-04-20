@@ -1,11 +1,41 @@
 import { z } from 'zod';
 
+const investmentDetailsSchema = z
+  .object({
+    instrument_type: z.enum([
+      'mutual_fund',
+      'sip',
+      'stock',
+      'fd',
+      'ppf',
+      'nps',
+      'bond',
+      'gold',
+      'silver',
+    ]),
+    instrument_name: z.string().max(200).optional(),
+    units: z.number().positive().optional(),
+    quantity: z.number().positive().optional(),
+    nav_or_price: z.number().positive().optional(),
+    folio_number: z.string().max(50).optional(),
+    platform: z.string().max(100).optional(),
+    interest_rate: z.number().positive().optional(),
+    maturity_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+  })
+  .optional()
+  .nullable();
+
 export const createTransactionSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   description: z.string().min(1, 'Description is required').max(500),
   amount: z.number().finite('Amount must be finite'),
   type: z.enum(['income', 'expense', 'transfer']),
   categoryId: z.string().uuid('Invalid category ID').optional().nullable(),
+  notes: z.string().max(1000).optional().nullable(),
+  investmentDetails: investmentDetailsSchema,
 });
 
 export const updateTransactionSchema = z.object({
@@ -18,6 +48,7 @@ export const updateTransactionSchema = z.object({
   type: z.enum(['income', 'expense', 'transfer']).optional(),
   categoryId: z.string().uuid().optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
+  investmentDetails: investmentDetailsSchema,
 });
 
 export const listTransactionsQuerySchema = z.object({

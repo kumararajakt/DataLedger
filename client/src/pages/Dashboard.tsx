@@ -2,10 +2,9 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMonthlyReport, useCategoryBreakdown, useTrends } from '../hooks/useReports';
 import { useTransactions } from '../hooks/useTransactions';
-import SpendingDonut from '../components/charts/SpendingDonut';
-import MonthlyTrend from '../components/charts/MonthlyTrend';
-import TransactionRow from '../components/transactions/TransactionRow';
-import LoadingSpinner from '../components/ui/LoadingSpinner';
+import { useDashboardConfig } from '../hooks/useDashboardConfig';
+import WidgetRenderer from '../components/dashboard/WidgetRenderer';
+import type { DashboardWidget } from '../types';
 
 const formatAmount = (amount: number) =>
   `₹${Math.abs(amount).toLocaleString('en-IN', {
@@ -27,21 +26,26 @@ const formatMonthLabel = (monthStr: string) => {
   });
 };
 
-const SkeletonCard = () => (
-  <div className="card skeleton-card">
-    <div className="skeleton skeleton-text" />
-    <div className="skeleton skeleton-value" />
-  </div>
-);
+const FALLBACK_WIDGETS: DashboardWidget[] = [
+  { id: 'f-income',    type: 'stat',           enabled: true, position: 0, colSpan: 3,  rowSpan: 1, config: { metric: 'income',            label: 'Total Income' } },
+  { id: 'f-expense',   type: 'stat',           enabled: true, position: 1, colSpan: 3,  rowSpan: 1, config: { metric: 'expense',           label: 'Total Expense' } },
+  { id: 'f-savings',   type: 'stat',           enabled: true, position: 2, colSpan: 3,  rowSpan: 1, config: { metric: 'savings',           label: 'Net Savings' } },
+  { id: 'f-txcount',   type: 'stat',           enabled: true, position: 3, colSpan: 3,  rowSpan: 1, config: { metric: 'transaction_count', label: 'Transactions' } },
+  { id: 'f-pie',       type: 'pie',            enabled: true, position: 4, colSpan: 6,  rowSpan: 2, config: { title: 'Payment Types' } },
+  { id: 'f-bank',      type: 'bank_breakdown', enabled: true, position: 5, colSpan: 6,  rowSpan: 2, config: { title: 'Category Breakdown', limit: 6 } },
+  { id: 'f-line',      type: 'line',           enabled: true, position: 6, colSpan: 12, rowSpan: 2, config: { months: 6, title: 'Monthly Volume' } },
+  { id: 'f-table',     type: 'table',          enabled: true, position: 7, colSpan: 12, rowSpan: 3, config: { source: 'recent_transactions', limit: 10, title: 'Transaction Overview' } },
+];
 
 const Dashboard: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const month = getMonthString(currentDate);
 
-  const { data: report, isLoading: reportLoading } = useMonthlyReport(month);
-  const { data: breakdown, isLoading: breakdownLoading } = useCategoryBreakdown(month);
-  const { data: trends, isLoading: trendsLoading } = useTrends(6);
-  const { data: recentTx, isLoading: txLoading } = useTransactions({ limit: 10, page: 1 });
+  const { data: report }     = useMonthlyReport(month);
+  const { data: breakdown }  = useCategoryBreakdown(month);
+  const { data: trends }     = useTrends(6);
+  const { data: recentTx }   = useTransactions({ limit: 10, page: 1 });
+  const { data: dashConfig } = useDashboardConfig();
 
   const prevMonth = () => {
     const d = new Date(currentDate);
@@ -55,124 +59,66 @@ const Dashboard: React.FC = () => {
     setCurrentDate(d);
   };
 
-  const isCurrentMonth =
-    getMonthString(currentDate) === getMonthString(new Date());
+  const isCurrentMonth = getMonthString(currentDate) === getMonthString(new Date());
+
+  const allWidgets = dashConfig?.widgets ?? FALLBACK_WIDGETS;
+  const enabled    = allWidgets
+    .filter((w) => w.enabled)
+    .sort((a, b) => a.position - b.position);
+
+  const netSavings = report?.netSavings ?? 0;
+  const savingsPositive = netSavings >= 0;
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <h1 className="page-title">Dashboard</h1>
-        <div className="month-selector">
-          <button className="month-nav-btn" onClick={prevMonth} aria-label="Previous month">
-            &larr;
-          </button>
-          <span className="month-label">{formatMonthLabel(month)}</span>
-          <button
-            className="month-nav-btn"
-            onClick={nextMonth}
-            disabled={isCurrentMonth}
-            aria-label="Next month"
-          >
-            &rarr;
-          </button>
-        </div>
-      </div>
+    <div className="page dashboard-page">
 
-      {/* Summary cards */}
-      <div className="summary-grid">
-        {reportLoading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        ) : (
-          <>
-            <div className="card summary-card summary-income">
-              <p className="summary-label">Total Income</p>
-              <p className="summary-value text-success">
-                {formatAmount(report?.totalIncome ?? 0)}
-              </p>
-            </div>
-            <div className="card summary-card summary-expense">
-              <p className="summary-label">Total Expense</p>
-              <p className="summary-value text-danger">
-                {formatAmount(report?.totalExpense ?? 0)}
-              </p>
-            </div>
-            <div className="card summary-card summary-savings">
-              <p className="summary-label">Net Savings</p>
-              <p
-                className={`summary-value ${
-                  (report?.netSavings ?? 0) >= 0 ? 'text-success' : 'text-danger'
-                }`}
-              >
-                {(report?.netSavings ?? 0) < 0 ? '-' : ''}
-                {formatAmount(report?.netSavings ?? 0)}
-              </p>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="dashboard-charts">
-        <div className="card chart-card">
-          <h2 className="card-title">Spending by Category</h2>
-          {breakdownLoading ? (
-            <LoadingSpinner centered />
-          ) : (
-            <SpendingDonut data={breakdown ?? []} />
-          )}
+      {/* ── Top bar ─────────────────────────────────────────────── */}
+      <div className="dash-topbar">
+        <div className="dash-balance">
+          <span className="dash-balance-label">Total Balance</span>
+          <div className="dash-balance-row">
+            <span className="dash-balance-amount">{formatAmount(report?.totalIncome ?? 0)}</span>
+            <span className={`dash-balance-badge ${savingsPositive ? 'dash-badge-up' : 'dash-badge-down'}`}>
+              {savingsPositive ? '↑' : '↓'} {formatAmount(Math.abs(netSavings))} net
+            </span>
+          </div>
         </div>
-        <div className="card chart-card">
-          <h2 className="card-title">6-Month Trend</h2>
-          {trendsLoading ? (
-            <LoadingSpinner centered />
-          ) : (
-            <MonthlyTrend data={trends ?? []} />
-          )}
-        </div>
-      </div>
 
-      {/* Recent Transactions */}
-      <div className="card">
-        <div className="card-header">
-          <h2 className="card-title">Recent Transactions</h2>
-          <Link to="/transactions" className="card-link">
-            View all &rarr;
+        <div className="dash-topbar-right">
+          <div className="month-selector">
+            <button className="month-nav-btn" onClick={prevMonth} aria-label="Previous month">&larr;</button>
+            <span className="month-label">{formatMonthLabel(month)}</span>
+            <button
+              className="month-nav-btn"
+              onClick={nextMonth}
+              disabled={isCurrentMonth}
+              aria-label="Next month"
+            >&rarr;</button>
+          </div>
+          <Link to="/import" className="btn btn-secondary btn-sm">
+            ↑ Import
+          </Link>
+          <Link to="/transactions" className="btn btn-primary btn-sm">
+            View all
           </Link>
         </div>
-        {txLoading ? (
-          <LoadingSpinner centered />
-        ) : recentTx?.data.length ? (
-          <div className="table-wrapper">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th>Category</th>
-                  <th>Amount</th>
-                  <th>Type</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentTx.data.map((t) => (
-                  <TransactionRow
-                    key={t.id}
-                    transaction={t}
-                    onEdit={() => {}}
-                    onDelete={() => {}}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-muted text-center">No transactions yet.</p>
-        )}
       </div>
+
+      {/* ── Widget grid ─────────────────────────────────────────── */}
+      <div className="dashboard-widget-grid">
+        {enabled.map((w) => (
+          <WidgetRenderer
+            key={w.id}
+            widget={w}
+            month={month}
+            report={report}
+            breakdown={breakdown}
+            trends={trends}
+            transactions={recentTx}
+          />
+        ))}
+      </div>
+
     </div>
   );
 };

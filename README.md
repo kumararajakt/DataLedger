@@ -8,12 +8,12 @@ A comprehensive personal finance tracking application built with React, Node.js,
 ## Features
 
 - **Bank Statement Import** — Upload CSV/PDF statements from SBI, HDFC, ICICI, and Axis banks
-- **Auto-Categorization** — Intelligent transaction categorization with learning from corrections
+- **Auto-Categorization** — Intelligent transaction categorization with keyword-based rules
 - **Dashboard** — Visual insights with spending charts and monthly trends
-- **Budget Tracking** — Set and monitor category-wise budgets
-- **Transaction Management** — Manual entry, editing, and filtering
-- **Secure Authentication** — JWT-based auth with access/refresh tokens
-- **AI Integration** — Optional AI-powered enrichment with your own API keys (Claude, OpenAI, etc.)
+- **Budget Tracking** — Set and monitor category-wise budgets with progress indicators
+- **Transaction Management** — Manual entry, editing, filtering, and search
+- **Secure Authentication** — JWT-based auth with access/refresh token flow
+- **AI Integration** — Optional AI-powered import enrichment with your own API keys (Claude, OpenAI, OpenRouter, Ollama)
 
 ## Tech Stack
 
@@ -38,17 +38,15 @@ A comprehensive personal finance tracking application built with React, Node.js,
 - **Container runtime** (choose one):
   - **Docker** and Docker Compose
   - **Podman** and podman-compose (see [MONOREPO.md](MONOREPO.md#using-podman))
-- Python 3.10+ (optional, for local PDF service development)
 
 ### Monorepo Structure
-
-This project is organized as a pnpm workspace monorepo:
 
 ```
 personal-finance-tracker/
 ├── client/                 # React frontend (workspace package)
 ├── server/                 # Node.js backend (workspace package)
 ├── pdf-service/            # Python PDF microservice (workspace package)
+├── db-migrations/          # Database migration & seeding service (workspace package)
 ├── pnpm-workspace.yaml     # Workspace configuration
 ├── package.json            # Root workspace config + scripts
 └── docker-compose.yml      # Infrastructure services
@@ -69,17 +67,13 @@ personal-finance-tracker/
 
 3. **Start PostgreSQL and PDF Service with Docker**
    ```bash
-   pnpm run docker:up
+   pnpm run compose:up
    ```
 
 4. **Set up environment variables**
    ```bash
-   # Copy root .env.example to .env (contains all service configs)
    cp .env.example .env
-   
-   # Or copy individual service files
-   cp server/.env.example server/.env
-   cp client/.env.example client/.env
+   # Edit .env and update secrets as needed
    ```
 
 5. **Run database migrations and seed data**
@@ -92,7 +86,7 @@ personal-finance-tracker/
    ```bash
    pnpm run dev
    ```
-   
+
    Or start individual services:
    ```bash
    pnpm run dev:client   # Frontend only
@@ -110,28 +104,15 @@ personal-finance-tracker/
 ### Root Commands (run from project root)
 
 ```bash
-# Install dependencies for all packages
-pnpm install
-
-# Start all services in parallel
-pnpm run dev
-
-# Build all packages
-pnpm run build
-
-# Run database migrations
-pnpm run db:migrate
-
-# Seed default categories
-pnpm run db:seed
-
-# Docker commands
-pnpm run docker:up         # Start PostgreSQL + PDF service
-pnpm run docker:down       # Stop all services
-pnpm run docker:logs       # View service logs
-
-# Clean all packages
-pnpm run clean
+pnpm install              # Install all dependencies
+pnpm run dev              # Start all services in parallel
+pnpm run build            # Build all packages
+pnpm run db:migrate       # Run database migrations
+pnpm run db:seed          # Seed default categories
+pnpm run compose:up       # Start infrastructure
+pnpm run compose:down     # Stop all services
+pnpm run compose:logs     # View service logs
+pnpm run clean            # Clean all packages
 ```
 
 ### Package-Specific Commands
@@ -143,10 +124,15 @@ pnpm --filter finance-tracker-client run build
 
 # Backend only
 pnpm --filter finance-tracker-server run dev
-pnpm --filter finance-tracker-server run db:migrate
+pnpm --filter finance-tracker-server run build
 
 # PDF service only
 pnpm --filter pdf-service run dev
+
+# Database migrations
+pnpm --filter db-migrations run migrate
+pnpm --filter db-migrations run seed
+pnpm --filter db-migrations run build
 ```
 
 ## Project Structure
@@ -165,13 +151,24 @@ personal-finance-tracker/
 │
 ├── server/                     # Node.js backend (Express)
 │   ├── src/
-│   │   ├── db/                 # Database config + migrations
-│   │   ├── middleware/         # Express middleware
-│   │   ├── routes/             # API route handlers
-│   │   ├── services/           # Business logic
-│   │   │   ├── ai/             # AI integration services
-│   │   │   └── parser/         # CSV/PDF parsing
-│   │   └── index.ts            # Entry point
+│   │   ├── controllers/        # Request handlers (business logic)
+│   │   ├── models/             # Database models (CRUD operations)
+│   │   ├── schemas/            # Zod validation schemas
+│   │   ├── routes/             # API route definitions
+│   │   ├── middleware/         # Express middleware (auth, error handling)
+│   │   ├── db/                 # Database config, migrations, seed
+│   │   │   ├── migrations/     # SQL migration files
+│   │   │   ├── pool.ts         # PostgreSQL connection pool
+│   │   │   ├── migrate.ts      # Migration runner
+│   │   │   └── seed.ts         # Seed default data
+│   │   └── services/           # Shared utilities
+│   │       ├── ai/             # AI integration services
+│   │       ├── parser/         # CSV parsing (PDF → pdf-service)
+│   │       ├── categorizer.ts  # Keyword-based categorization
+│   │       ├── dedup.ts        # SHA256 deduplication
+│   │       ├── encryption.ts   # AES-256-GCM for API keys
+│   │       ├── normalizer.ts   # Transaction normalization
+│   │       └── snapshotBuilder.ts # Monthly aggregation
 │   └── package.json
 │
 ├── pdf-service/                # Python PDF microservice
@@ -180,8 +177,13 @@ personal-finance-tracker/
 │   ├── parser.py               # PDF parsing orchestration
 │   └── requirements.txt
 │
+├── db-migrations/              # Database migration service
+│   ├── src/db/                 # Migration runner & seed script
+│   ├── Dockerfile              # Container build
+│   └── package.json
+│
 ├── .env.example                # Root environment variables template
-├── docker-compose.yml          # PostgreSQL + pgAdmin + PDF service
+├── docker-compose.yml          # PostgreSQL + pgAdmin + PDF service + db-migrate
 ├── pnpm-workspace.yaml         # pnpm workspace configuration
 ├── package.json                # Root package.json (workspace scripts)
 ├── README.md                   # This file
@@ -190,43 +192,116 @@ personal-finance-tracker/
 └── todo.md                     # Implementation task list
 ```
 
+## Architecture
+
+### Server Layering
+
+The backend follows a clean layered architecture:
+
+```
+Request → Route → Controller → Model → Database
+                    ↓
+                 Schema (validation)
+```
+
+- **Routes** — Define HTTP endpoints and middleware, delegate to controllers
+- **Controllers** — Handle request/response lifecycle, validate input with schemas
+- **Models** — Encapsulate database operations and business logic
+- **Schemas** — Zod validation schemas for all API inputs
+
+### PDF Import Pipeline
+
+```
+User uploads PDF → importController → POST to pdf-service → ParsedRow[]
+                       ↓
+               normalizeRows() → filterDuplicates() → categorizeTransactions()
+                       ↓
+               storeJob() → return jobId → Client previews & confirms import
+```
+
+All PDF parsing (structured parsing, AI fallback, bank detection) is handled entirely by the **Python pdf-service**. The Node.js server acts as a lightweight proxy.
+
+### Data Import Pipeline (CSV)
+
+```
+CSV Upload → Parser → Normalizer → Dedup (SHA256) → Categorizer → Bulk INSERT
+                                                              ↓
+                                                         AI Enrichment (optional)
+```
+
+### Auto-Categorization
+
+1. **Pass 1**: User-defined rules (priority-based)
+2. **Pass 2**: System default keywords
+3. **Pass 3**: AI suggestions (if enabled)
+
+Re-categorizing a transaction creates a new user rule for future imports.
+
+### Monthly Snapshots
+
+Pre-aggregated data for dashboard performance. Updated on transaction changes (insert/update/delete). Stores: `total_income`, `total_expense`, `by_category` (JSONB).
+
 ## API Endpoints
 
 ### Authentication
-- `POST /api/auth/register` — Register new user
-- `POST /api/auth/login` — Login user
-- `POST /api/auth/refresh` — Refresh access token
-- `DELETE /api/auth/logout` — Logout user
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register new user |
+| POST | `/api/auth/login` | Login user |
+| POST | `/api/auth/refresh` | Refresh access token |
+| DELETE | `/api/auth/logout` | Logout user |
 
 ### Transactions
-- `GET /api/transactions` — List transactions
-- `POST /api/transactions` — Create transaction
-- `PATCH /api/transactions/:id` — Update transaction
-- `DELETE /api/transactions/:id` — Delete transaction
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/transactions` | List transactions (filters: date, category, type, search) |
+| POST | `/api/transactions` | Create transaction |
+| PATCH | `/api/transactions/:id` | Update transaction |
+| DELETE | `/api/transactions/:id` | Delete transaction |
 
 ### Import
-- `POST /api/import/csv` — Upload CSV file
-- `GET /api/import/preview/:jobId` — Get import preview
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/import/csv` | Upload CSV file |
+| POST | `/api/import/csv/confirm/:jobId` | Confirm import |
+| POST | `/api/import/pdf` | Upload PDF file |
+| POST | `/api/import/pdf/confirm/:jobId` | Confirm PDF import |
+| POST | `/api/import/enrich/:jobId` | AI enrichment for pending import |
 
 ### Budgets
-- `GET /api/budgets` — List budgets
-- `POST /api/budgets` — Create budget
-- `PATCH /api/budgets/:id` — Update budget
-- `DELETE /api/budgets/:id` — Delete budget
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/budgets` | List budgets |
+| POST | `/api/budgets` | Create budget |
+| PATCH | `/api/budgets/:id` | Update budget |
+| DELETE | `/api/budgets/:id` | Delete budget |
 
 ### Categories
-- `GET /api/categories` — List categories
-- `POST /api/categories` — Create category
-- `PATCH /api/categories/:id` — Update category
-- `DELETE /api/categories/:id` — Delete category
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/categories` | List categories |
+| POST | `/api/categories` | Create category |
+| PATCH | `/api/categories/:id` | Update category |
+| DELETE | `/api/categories/:id` | Delete category |
 
 ### Reports
-- `GET /api/reports/monthly` — Monthly summary
-- `GET /api/reports/category-breakdown` — Category spending
-- `GET /api/reports/trends` — Monthly trends
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/reports/monthly` | Monthly summary |
+| GET | `/api/reports/category-breakdown` | Category spending breakdown |
+| GET | `/api/reports/trends` | Monthly trends |
+
+### AI Settings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/settings/ai` | Get AI config (key masked) |
+| POST | `/api/settings/ai` | Save/update AI config |
+| DELETE | `/api/settings/ai` | Clear AI config |
+| POST | `/api/settings/ai/test` | Test connection |
 
 ## Supported Bank Formats
 
+### CSV Import
 | Bank | Date Format | Amount Columns | Header Row |
 |------|-------------|----------------|------------|
 | SBI | DD/MM/YYYY | Debit / Credit | Row 1 |
@@ -234,15 +309,21 @@ personal-finance-tracker/
 | ICICI | DD/MM/YYYY | Debit / Credit | Row 1 |
 | Axis | DD/MM/YYYY | Credit / Debit (reversed) | Row 1 |
 
+### PDF Import
+Text-based PDFs are parsed by the Python pdf-service using `pdfplumber`. Scanned PDFs support optional OCR via PaddleOCR (opt-in via `ENABLE_OCR` environment variable).
+
 ## Environment Variables
 
 ### Server (.env)
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/finance_tracker
-JWT_ACCESS_SECRET=your_access_secret_here
-JWT_REFRESH_SECRET=your_refresh_secret_here
+JWT_ACCESS_SECRET=change_this_access_secret_min_32_chars
+JWT_REFRESH_SECRET=change_this_refresh_secret_min_32_chars
 PORT=3001
 NODE_ENV=development
+CLIENT_URL=http://localhost:5173
+AI_ENCRYPTION_KEY=change_this_to_a_64_char_hex_string
+PDF_SERVICE_URL=http://localhost:5001
 ```
 
 ### Client (.env)
@@ -250,48 +331,71 @@ NODE_ENV=development
 VITE_API_URL=http://localhost:3001
 ```
 
-## Development Commands
-
-### Backend
-```bash
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run start        # Start production server
-npm run db:migrate   # Run database migrations
-npm run db:seed      # Seed default data
+### PDF Service (.env)
+```env
+ENABLE_OCR=false
+LOG_LEVEL=INFO
 ```
 
-### Frontend
+## Database Schema
+
+### Tables
+- **users**: `id`, `email`, `password_hash`, `created_at`
+- **categories**: `id`, `user_id`, `name`, `color`, `icon`, `is_system`
+- **transactions**: `id`, `user_id`, `category_id`, `date`, `description`, `amount`, `type`, `source`, `hash`, `raw_data`, `notes`, `created_at`
+- **budgets**: `id`, `user_id`, `category_id`, `month`, `amount`
+- **categorization_rules**: `id`, `user_id`, `keyword`, `category_id`, `priority`
+- **monthly_snapshots**: `id`, `user_id`, `month`, `total_income`, `total_expense`, `by_category`
+- **user_ai_settings**: `user_id`, `enabled`, `provider`, `base_url`, `api_key` (encrypted), `model`, `updated_at`
+
+### Key Features
+- Row-Level Security (RLS) enabled on transactions table
+- UUID primary keys throughout
+- ON DELETE CASCADE for user-dependent data
+- Indexes on frequently queried columns (user_id, date, hash)
+
+## Docker Compose
+
+The `docker-compose.yml` defines the following services:
+
+| Service | Description | Port |
+|---------|-------------|------|
+| `postgres` | PostgreSQL 14 database | 5432 |
+| `pgadmin` | pgAdmin web interface | 5050 |
+| `pdf-service` | Python PDF microservice | 5001 |
+| `db-migrate` | Runs migrations then exits | — |
+| `server` | Node.js backend API | 3001 |
+| `client` | React frontend (nginx) | 8080 |
+
 ```bash
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run preview      # Preview production build
+pnpm run compose:up              # Start all services
+pnpm run compose:down            # Stop all services
+pnpm run compose:logs            # View all logs
+pnpm run compose:ps              # List running services
 ```
-
-## Testing
-
-Automated tests are planned for Phase 11 (see `todo.md`). Until then, use manual testing:
-
-```bash
-# Backend — run API tests with Postman or similar
-# Test coverage: auth flow, transaction CRUD, import pipeline, budget CRUD
-
-# Frontend — manual browser testing
-# Test coverage: login/logout, import flow, dashboard rendering, responsive design
-```
-
-See `todo.md` Phase 11 for the full manual test checklist.
 
 ## Security Features
 
 - Password hashing with bcrypt (cost factor 10)
-- JWT authentication with short-lived access tokens
-- Refresh tokens in httpOnly cookies
+- JWT access tokens: 15 min expiry (stored in memory)
+- Refresh tokens: 7 days expiry (httpOnly cookie)
 - Row-Level Security (RLS) in PostgreSQL
 - CORS with configured allowed origins
-- Rate limiting on API endpoints
-- Input validation and sanitization
+- Rate limiting: 100 requests per 15 minutes
+- Input validation with Zod schemas
 - Parameterized SQL queries (SQL injection prevention)
+- AES-256-GCM encryption for stored AI API keys
+
+## Testing
+
+Automated tests are planned for Phase 12 (see `todo.md`). Until then, use manual testing:
+
+```bash
+# Backend — test API endpoints with Postman or similar
+# Frontend — manual browser testing
+```
+
+See `todo.md` for the full test checklist.
 
 ## Contributing
 
@@ -304,7 +408,3 @@ See `todo.md` Phase 11 for the full manual test checklist.
 ## License
 
 MIT License — feel free to use this project for learning or personal use.
-
-## Acknowledgments
-
-Built as a portfolio project demonstrating full-stack development skills with modern web technologies.

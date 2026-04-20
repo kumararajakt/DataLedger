@@ -1,8 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import { registerSchema, loginSchema } from '../schemas/auth';
 import { UserModel } from '../models/userModel';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
@@ -89,7 +92,11 @@ export class AuthController {
         return;
       }
 
-      // Verify password
+      // Verify password (null hash means Google-only account)
+      if (!user.password_hash) {
+        res.status(401).json({ error: 'This account uses Google sign-in' });
+        return;
+      }
       const passwordValid = await bcrypt.compare(password, user.password_hash);
       if (!passwordValid) {
         res.status(401).json({ error: 'Invalid email or password' });
@@ -156,6 +163,59 @@ export class AuthController {
       const newAccessToken = generateAccessToken(tokenPayload);
 
       res.json({ accessToken: newAccessToken });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // POST /api/auth/google
+  static async googleAuth(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const { credential } = req.body as { credential?: string };
+      if (!credential) {
+        res.status(400).json({ error: 'Google credential is required' });
+        return;
+      }
+
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      if (!clientId) {
+        res.status(500).json({ error: 'Google OAuth is not configured' });
+        return;
+      }
+
+      let payload;
+      try {
+        const ticket = await googleClient.verifyIdToken({
+          idToken: credential,
+          audience: clientId,
+        });
+        payload = ticket.getPayload();
+      } catch {
+        res.status(401).json({ error: 'Invalid Google credential' });
+        return;
+      }
+
+      if (!payload?.sub || !payload?.email) {
+        res.status(401).json({ error: 'Incomplete Google profile' });
+        return;
+      }
+
+      const user = await UserModel.findOrCreateByGoogle(payload.sub, payload.email);
+
+      const tokenPayload: TokenPayload = { userId: user.id, email: user.email };
+      const accessToken = generateAccessToken(tokenPayload);
+      const refreshToken = generateRefreshToken(tokenPayload);
+
+      setRefreshTokenCookie(res, refreshToken);
+
+      res.json({
+        accessToken,
+        user: { id: user.id, email: user.email },
+      });
     } catch (err) {
       next(err);
     }

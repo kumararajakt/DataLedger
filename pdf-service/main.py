@@ -4,6 +4,7 @@ Primary endpoint for parsing bank statement PDFs using pdfplumber and camelot.
 """
 
 import os
+import json
 import logging
 from typing import Optional
 import uvicorn
@@ -12,6 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from parser import parse_pdf
+from classifier import TransactionClassifier
 
 # Configure logging — third-party libraries stay at WARNING, only app code uses LOG_LEVEL
 _log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
@@ -58,6 +60,8 @@ async def health_check():
 async def parse_pdf_endpoint(
     file: UploadFile = File(..., description="PDF file to parse"),
     bank_hint: Optional[str] = Form(None, description="Override bank detection"),
+    # Categorization rules for TF-IDF classifier (JSON-encoded list of {keyword, category_name})
+    rules: str = Form(default="[]", description="JSON array of {keyword, category_name} for classification"),
     # AI fallback settings — forwarded from the Node.js server when the user has AI configured
     ai_provider: Optional[str] = Form(None, description="AI provider: anthropic | openai | openrouter | local"),
     ai_api_key: Optional[str] = Form(None, description="AI provider API key"),
@@ -104,6 +108,26 @@ async def parse_pdf_endpoint(
 
     try:
         result = parse_pdf(pdf_bytes, bank_hint, ENABLE_OCR)
+
+        # Build classifier from rules if provided
+        try:
+            rules_list = json.loads(rules) if rules and rules != "[]" else []
+            classifier = TransactionClassifier(rules_list) if rules_list else None
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Failed to build classifier from rules: {e}")
+            classifier = None
+
+        # Enrich each transaction with suggested category + auto-generated note
+        if classifier:
+            for tx in result.get("transactions", []):
+                desc = tx.get("description", "")
+                cat, conf = classifier.classify(desc)
+                if cat:
+                    tx["suggested_category"] = cat
+                    tx["confidence"] = round(conf, 3)
+                note = classifier.generate_note(desc)
+                if note:
+                    tx["notes"] = note
 
         # AI fallback: if structured parsing found nothing and AI settings are available
         if not result.get("transactions") and ai_api_key and ai_base_url and ai_model:

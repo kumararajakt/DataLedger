@@ -47,6 +47,8 @@ export function normalizeRow(row: ParsedRow): NormalizedTransaction {
     amount,
     type,
     rawRow: row.rawRow,
+    ...(row.suggestedCategoryName ? { aiCategoryName: row.suggestedCategoryName } : {}),
+    ...(row.notes ? { notes: row.notes } : {}),
   };
 }
 

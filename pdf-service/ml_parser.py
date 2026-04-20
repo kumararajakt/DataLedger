@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 # Matches amounts like "107.00", "10,393.75", "78,592.00"
 AMOUNT_RE = re.compile(r"^\d[\d,]*\.\d{2}$")
 
+# Matches serial number cells like "1", "2", "10" — excluded from descriptions
+SERIAL_NO_RE = re.compile(r"^\d{1,4}$")
+
 # Matches date formats: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
 DATE_RE = re.compile(
     r"^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$"
@@ -126,14 +129,29 @@ def _parse_page(page: pdfplumber.page.Page) -> list[dict]:
     # ── Step 4: Build transactions ────────────────────────────────────────
     transactions = []
     pending: Optional[dict] = None
-    # Tracks consecutive continuation rows with no amounts — used to detect
-    # footer/legend sections that appear after the last transaction row.
     no_amount_streak = 0
     MAX_NO_AMOUNT_STREAK = 4
 
     data_rows = sorted_rows[header_y_idx + 1:] if header_y_idx is not None else sorted_rows
 
-    for row in data_rows:
+    # Pre-scan: detect "orphan" rows — text-only rows immediately before a date row.
+    # In some bank PDFs (e.g. ICICI), the first description line of a transaction is
+    # rendered above the date cell in PDF y-coordinate order, so it would otherwise
+    # be appended to the PREVIOUS transaction as a continuation line.
+    n_data = len(data_rows)
+    is_orphan = [False] * n_data
+    for _i in range(n_data - 1):
+        _row = data_rows[_i]
+        _next = data_rows[_i + 1]
+        if (not any(_is_date(w["text"]) for w in _row)
+                and not any(_is_amount(w["text"]) for w in _row)
+                and any(_is_date(w["text"]) for w in _next)):
+            is_orphan[_i] = True
+
+    # Buffer for orphan description text — prepended to the NEXT transaction
+    orphan_buffer: list[str] = []
+
+    for row_idx, row in enumerate(data_rows):
         row_text_lower = " ".join(w["text"].lower() for w in row)
 
         # Skip rows that look like headers/footers
@@ -156,18 +174,27 @@ def _parse_page(page: pdfplumber.page.Page) -> list[dict]:
                 pending = None
                 continue
 
-            # Description = non-date, non-amount words to the left of amount columns
+            # Description = non-date, non-amount, non-serial-number words to the left of amount columns
             leftmost_amount_x = min(col_centers.values())
             desc_words = [
                 w["text"] for w in row
                 if not _is_date(w["text"])
                 and not _is_amount(w["text"])
+                and not SERIAL_NO_RE.match(w["text"].strip())
                 and float(w["x0"]) < leftmost_amount_x
             ]
 
+            # Prepend any orphan text buffered from the previous continuation pass
+            initial_parts = []
+            if orphan_buffer:
+                initial_parts.extend(orphan_buffer)
+                orphan_buffer.clear()
+            if desc_words:
+                initial_parts.append(" ".join(desc_words))
+
             pending = {
                 "date": date_val,
-                "desc_parts": [" ".join(desc_words)],
+                "desc_parts": initial_parts,
                 "raw_amounts": [(float(w["x0"]), w["text"]) for w in amount_words_in_row],
             }
 
@@ -177,8 +204,7 @@ def _parse_page(page: pdfplumber.page.Page) -> list[dict]:
                 no_amount_streak = 0
             else:
                 no_amount_streak += 1
-                # Too many consecutive no-amount rows → we've entered a footer/legend
-                # section; stop accumulating into the current transaction.
+                # Too many consecutive no-amount rows → footer/legend section; stop.
                 if no_amount_streak > MAX_NO_AMOUNT_STREAK:
                     continue
 
@@ -186,10 +212,16 @@ def _parse_page(page: pdfplumber.page.Page) -> list[dict]:
             desc_words = [
                 w["text"] for w in row
                 if not _is_amount(w["text"])
+                and not SERIAL_NO_RE.match(w["text"].strip())
                 and float(w["x0"]) < leftmost_amount_x
             ]
             if desc_words:
-                pending["desc_parts"].append(" ".join(desc_words))
+                desc_text = " ".join(desc_words)
+                if is_orphan[row_idx]:
+                    # This row's text belongs to the NEXT transaction, not the current one
+                    orphan_buffer.append(desc_text)
+                else:
+                    pending["desc_parts"].append(desc_text)
             pending["raw_amounts"].extend(
                 (float(w["x0"]), w["text"]) for w in amount_words_in_row
             )

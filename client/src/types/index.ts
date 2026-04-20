@@ -3,6 +3,29 @@ export interface User {
   email: string;
 }
 
+export type InstrumentType =
+  | 'mutual_fund'
+  | 'sip'
+  | 'stock'
+  | 'fd'
+  | 'ppf'
+  | 'nps'
+  | 'bond'
+  | 'gold'
+  | 'silver';
+
+export interface InvestmentDetails {
+  instrument_type: InstrumentType;
+  instrument_name?: string;
+  units?: number;
+  quantity?: number;
+  nav_or_price?: number;
+  folio_number?: string;
+  platform?: string;
+  interest_rate?: number;
+  maturity_date?: string;
+}
+
 export interface Category {
   id: string;
   userId: string | null;
@@ -23,6 +46,7 @@ export interface Transaction {
   source: 'csv' | 'pdf' | 'manual' | 'plaid';
   hash: string | null;
   notes: string | null;
+  investmentDetails?: InvestmentDetails | null;
   createdAt: string;
   category?: Category;
 }
@@ -91,4 +115,38 @@ export interface TransactionFilters {
   search?: string;
   page?: number;
   limit?: number;
+}
+
+// ── Dashboard widget types ────────────────────────────────────────────────────
+
+export type WidgetType  = 'stat' | 'pie' | 'line' | 'bar' | 'table' | 'bank_breakdown';
+export type StatMetric  = 'income' | 'expense' | 'savings' | 'transaction_count';
+export type TableSource = 'recent_transactions' | 'top_categories';
+
+export interface StatWidgetConfig          { metric: StatMetric; label?: string; }
+export interface PieWidgetConfig           { title?: string; }
+export interface LineWidgetConfig          { months: number; title?: string; }
+export interface BarWidgetConfig           { months: number; title?: string; }
+export interface TableWidgetConfig         { source: TableSource; limit: number; title?: string; }
+export interface BankBreakdownWidgetConfig { title?: string; limit?: number; }
+export type WidgetConfig =
+  | StatWidgetConfig
+  | PieWidgetConfig
+  | LineWidgetConfig
+  | BarWidgetConfig
+  | TableWidgetConfig
+  | BankBreakdownWidgetConfig;
+
+export interface DashboardWidget {
+  id:       string;
+  type:     WidgetType;
+  enabled:  boolean;
+  position: number;
+  colSpan:  number;
+  rowSpan:  number;
+  config:   WidgetConfig;
+}
+
+export interface DashboardConfig {
+  widgets: DashboardWidget[];
 }

@@ -8,7 +8,9 @@ const Layout: React.FC = () => {
       <Sidebar />
       <main className="app-main">
         <div className="app-content">
+          <div className="app-content-shell">
           <Outlet />
+          </div>
         </div>
       </main>
     </div>

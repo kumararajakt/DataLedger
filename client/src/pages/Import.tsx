@@ -5,9 +5,10 @@ import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import { useAiSettings } from '../hooks/useAiSettings';
 import type { Transaction } from '../types';
+import AppIcon from '../components/ui/AppIcon';
 
 type Step     = 'upload' | 'preview' | 'result';
-type FileType = 'csv' | 'pdf';
+type FileType = 'csv' | 'excel' | 'pdf';
 
 interface PreviewTransaction extends Partial<Transaction> {
   notes?: string | null;
@@ -41,7 +42,15 @@ const PDF_BANK_FORMATS = [
   { bank: 'Axis',  note: 'Digital PDF statements from Axis mobile / netbanking' },
 ];
 
+const EXCEL_BANK_FORMATS = [
+  { bank: 'SBI', format: 'Same columns as CSV export, in .xls or .xlsx format' },
+  { bank: 'HDFC', format: 'Date / Narration / Withdrawal Amt. / Deposit Amt.' },
+  { bank: 'ICICI', format: 'Transaction Date / Details / Amount (INR) / CR/DR' },
+  { bank: 'Axis', format: 'Tran Date / Particulars / Credit / Debit / Balance' },
+];
+
 const MAX_CSV_SIZE = 10 * 1024 * 1024;
+const MAX_EXCEL_SIZE = 10 * 1024 * 1024;
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 
 const Import: React.FC = () => {
@@ -63,7 +72,7 @@ const Import: React.FC = () => {
 
   // Inline editing state
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editRow, setEditRow]       = useState<{ date: string; description: string; amount: string; type: 'income' | 'expense' } | null>(null);
+  const [editRow, setEditRow]       = useState<{ date: string; description: string; amount: string; type: 'income' | 'expense'; notes: string } | null>(null);
 
   const aiEnabled = aiSettings?.enabled && aiSettings?.hasApiKey;
 
@@ -71,6 +80,11 @@ const Import: React.FC = () => {
     if (fileType === 'csv') {
       if (!file.name.toLowerCase().endsWith('.csv')) return 'Please select a CSV file.';
       if (file.size > MAX_CSV_SIZE) return 'CSV file must be under 10 MB.';
+    } else if (fileType === 'excel') {
+      const isExcel =
+        file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
+      if (!isExcel) return 'Please select an Excel file (.xlsx or .xls).';
+      if (file.size > MAX_EXCEL_SIZE) return 'Excel file must be under 10 MB.';
     } else {
       if (!file.name.toLowerCase().endsWith('.pdf')) return 'Please select a PDF file.';
       if (file.size > MAX_PDF_SIZE) return 'PDF file must be under 20 MB.';
@@ -105,7 +119,12 @@ const Import: React.FC = () => {
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
-      const endpoint = fileType === 'csv' ? '/api/import/csv' : '/api/import/pdf';
+      const endpoint =
+        fileType === 'csv'
+          ? '/api/import/csv'
+          : fileType === 'excel'
+          ? '/api/import/excel'
+          : '/api/import/pdf';
       const response = await apiClient.post<PreviewData>(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         params: fileType === 'pdf' && useAiParsing ? { useAi: 'true' } : undefined,
@@ -152,6 +171,7 @@ const Import: React.FC = () => {
       description: t.description ?? '',
       amount:      String(Math.abs(t.amount ?? 0)),
       type:        t.type as 'income' | 'expense' ?? 'expense',
+      notes:       t.notes ?? '',
     });
   };
 
@@ -161,7 +181,7 @@ const Import: React.FC = () => {
     const signedAmount = editRow.type === 'expense' ? -Math.abs(absAmount) : Math.abs(absAmount);
     const updated = preview.transactions.map((t, i) =>
       i === idx
-        ? { ...t, date: editRow.date, description: editRow.description, amount: signedAmount, type: editRow.type }
+        ? { ...t, date: editRow.date, description: editRow.description, amount: signedAmount, type: editRow.type, notes: editRow.notes || null }
         : t
     );
     setPreview({ ...preview, transactions: updated });
@@ -180,6 +200,8 @@ const Import: React.FC = () => {
     try {
       const endpoint = fileType === 'csv'
         ? `/api/import/csv/confirm/${preview.jobId}`
+        : fileType === 'excel'
+        ? `/api/import/excel/confirm/${preview.jobId}`
         : `/api/import/pdf/confirm/${preview.jobId}`;
       const response = await apiClient.post<ResultData>(endpoint, {
         transactions: preview.transactions.map((t) => ({
@@ -228,14 +250,21 @@ const Import: React.FC = () => {
   const formatAmount = (amount: number) =>
     `₹${Math.abs(amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
-  const accept  = fileType === 'csv' ? '.csv' : '.pdf';
-  const fileIcon = fileType === 'csv' ? '📊' : '📄';
+  const accept  = fileType === 'csv' ? '.csv' : fileType === 'excel' ? '.xlsx,.xls' : '.pdf';
+  const fileIcon = fileType === 'csv' ? '📊' : fileType === 'excel' ? '📗' : '📄';
   const hasAiNotes = preview?.transactions.some((t) => t.notes);
 
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">Import Transactions</h1>
+        <div>
+          <p className="page-eyebrow">Statement ingestion</p>
+          <h1 className="page-title">Import transactions</h1>
+          <p className="page-description">
+            Bring in bank statements, review duplicates, and confirm parsed transactions before they
+            hit your ledger.
+          </p>
+        </div>
       </div>
 
       {/* Step indicator */}
@@ -263,15 +292,21 @@ const Import: React.FC = () => {
               className={`file-type-tab ${fileType === 'csv' ? 'file-type-tab-active' : ''}`}
               onClick={() => handleFileTypeChange('csv')}
             >
-              📊 CSV Statement
+              <AppIcon name="dashboard" size={16} /> CSV Statement
+            </button>
+            <button
+              className={`file-type-tab ${fileType === 'excel' ? 'file-type-tab-active' : ''}`}
+              onClick={() => handleFileTypeChange('excel')}
+            >
+              <AppIcon name="wallet" size={16} /> Excel Statement
             </button>
             <button
               className={`file-type-tab ${fileType === 'pdf' ? 'file-type-tab-active' : ''}`}
               onClick={() => handleFileTypeChange('pdf')}
             >
-              📄 PDF Statement
-            </button>
-          </div>
+            <AppIcon name="import" size={16} /> PDF Statement
+          </button>
+        </div>
 
           {fileType === 'pdf' && (
             <div className="pdf-notice">
@@ -349,7 +384,11 @@ const Import: React.FC = () => {
                   <span className="dropzone-link">click to browse</span>
                 </p>
                 <p className="dropzone-hint">
-                  {fileType === 'csv' ? 'CSV only, max 10 MB' : 'PDF only, max 20 MB'}
+                  {fileType === 'csv'
+                    ? 'CSV only, max 10 MB'
+                    : fileType === 'excel'
+                    ? 'Excel (.xlsx, .xls), max 10 MB'
+                    : 'PDF only, max 20 MB'}
                 </p>
               </>
             )}
@@ -368,18 +407,28 @@ const Import: React.FC = () => {
           {/* Format reference table */}
           <div className="bank-formats">
             <h3 className="bank-formats-title">
-              {fileType === 'csv' ? 'Supported CSV Column Formats' : 'Supported PDF Statement Sources'}
+              {fileType === 'csv'
+                ? 'Supported CSV Column Formats'
+                : fileType === 'excel'
+                ? 'Supported Excel Column Formats'
+                : 'Supported PDF Statement Sources'}
             </h3>
             <div className="table-wrapper">
               <table className="table">
                 <thead>
                   <tr>
                     <th>Bank</th>
-                    <th>{fileType === 'csv' ? 'CSV Columns' : 'Source'}</th>
+                    <th>{fileType === 'pdf' ? 'Source' : 'Columns / Sheet Layout'}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(fileType === 'csv' ? CSV_BANK_FORMATS : PDF_BANK_FORMATS).map((b) => (
+                  {(
+                    fileType === 'csv'
+                      ? CSV_BANK_FORMATS
+                      : fileType === 'excel'
+                      ? EXCEL_BANK_FORMATS
+                      : PDF_BANK_FORMATS
+                  ).map((b) => (
                     <tr key={b.bank}>
                       <td><strong>{b.bank}</strong></td>
                       <td><code className="code-text">{'format' in b ? b.format : b.note}</code></td>
@@ -413,7 +462,7 @@ const Import: React.FC = () => {
             )}
           </div>
 
-          {/* AI disclaimer */}
+          {/* Notes disclaimer */}
           {hasAiNotes && (
             <div style={{
               margin: '0.75rem 0',
@@ -423,7 +472,7 @@ const Import: React.FC = () => {
               color: '#1e40af',
               fontSize: '0.82rem',
             }}>
-              ✦ AI-generated notes shown below. Review before confirming — AI can make mistakes.
+              ✦ Auto-generated notes shown below. Click ✏️ to edit any note before confirming.
             </div>
           )}
 
@@ -432,7 +481,7 @@ const Import: React.FC = () => {
             <span className="pill pill-warning">{preview.duplicates} duplicates skipped</span>
             <span className="pill pill-neutral">{preview.transactions.length} total parsed</span>
             <span className="pill pill-source">{fileType.toUpperCase()}</span>
-            {hasAiNotes && <span className="pill" style={{ background: '#dbeafe', color: '#1d4ed8' }}>✦ AI enhanced</span>}
+            {hasAiNotes && <span className="pill" style={{ background: '#dbeafe', color: '#1d4ed8' }}>✦ Notes added</span>}
           </div>
 
           {preview.transactions.length > 0 ? (
@@ -486,6 +535,13 @@ const Import: React.FC = () => {
                             <option value="expense">expense</option>
                             <option value="income">income</option>
                           </select>
+                          <input
+                            type="text"
+                            placeholder="Note (optional)"
+                            value={editRow.notes}
+                            onChange={(e) => setEditRow({ ...editRow, notes: e.target.value })}
+                            style={{ display: 'block', marginTop: '0.3rem', width: '100%', fontSize: '0.8rem', border: '1px solid #cbd5e1', borderRadius: '0.25rem', padding: '0.2rem 0.4rem', color: '#6366f1' }}
+                          />
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <button

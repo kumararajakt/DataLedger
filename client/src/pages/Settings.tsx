@@ -11,6 +11,11 @@ import {
   useDeleteAiSettings,
   useTestAiConnection,
 } from '../hooks/useAiSettings';
+import {
+  useDashboardConfig,
+  useSaveDashboardConfig,
+  useResetDashboardConfig,
+} from '../hooks/useDashboardConfig';
 import { useAuthStore } from '../store/authStore';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
@@ -18,7 +23,8 @@ import Input from '../components/ui/Input';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import { useToast } from '../components/ui/Toast';
-import type { Category, AiProvider } from '../types';
+import type { Category, AiProvider, DashboardWidget, WidgetType, StatMetric, TableSource, WidgetConfig, BankBreakdownWidgetConfig } from '../types';
+import AppIcon from '../components/ui/AppIcon';
 
 // ── Category form ───────────────────────────────────────────────────────────
 
@@ -55,6 +61,42 @@ const INITIAL_AI_FORM: AiFormData = {
   model:    PROVIDER_DEFAULTS.openai.model,
 };
 
+// ── Dashboard widget helpers ─────────────────────────────────────────────────
+
+const WIDGET_TYPE_LABELS: Record<WidgetType, string> = {
+  stat:           'Number / Stat card',
+  pie:            'Pie chart',
+  line:           'Line chart',
+  bar:            'Bar chart',
+  table:          'Data table',
+  bank_breakdown: 'Category breakdown bars',
+};
+
+const DEFAULT_CONFIGS: Record<WidgetType, WidgetConfig> = {
+  stat:           { metric: 'income' as StatMetric, label: 'Income' },
+  pie:            { title: 'Spending by category' },
+  line:           { months: 6, title: 'Trend' },
+  bar:            { months: 6, title: 'Monthly comparison' },
+  table:          { source: 'recent_transactions' as TableSource, limit: 10, title: 'Recent transactions' },
+  bank_breakdown: { title: 'Category Breakdown', limit: 6 } as BankBreakdownWidgetConfig,
+};
+
+const DEFAULT_SPANS: Record<WidgetType, { colSpan: number; rowSpan: number }> = {
+  stat:           { colSpan: 3,  rowSpan: 1 },
+  pie:            { colSpan: 6,  rowSpan: 2 },
+  line:           { colSpan: 12, rowSpan: 2 },
+  bar:            { colSpan: 12, rowSpan: 2 },
+  table:          { colSpan: 12, rowSpan: 3 },
+  bank_breakdown: { colSpan: 6,  rowSpan: 2 },
+};
+
+const STAT_METRIC_LABELS: Record<StatMetric, string> = {
+  income:            'Total income',
+  expense:           'Total expense',
+  savings:           'Net savings',
+  transaction_count: 'Transaction count',
+};
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 const Settings: React.FC = () => {
@@ -87,7 +129,7 @@ const Settings: React.FC = () => {
     ok: boolean; msg: string; latencyMs?: number;
   } | null>(null);
 
-  // Sync form when config loads
+  // Sync AI form when config loads
   useEffect(() => {
     if (aiConfig) {
       setAiForm({
@@ -99,6 +141,23 @@ const Settings: React.FC = () => {
       });
     }
   }, [aiConfig]);
+
+  // ── Dashboard widget state ───────────────────────────────────────────────
+
+  const { data: dashConfig, isLoading: dashLoading } = useDashboardConfig();
+  const saveDashMutation  = useSaveDashboardConfig();
+  const resetDashMutation = useResetDashboardConfig();
+
+  const [localWidgets, setLocalWidgets]       = useState<DashboardWidget[]>([]);
+  const [editingWidget, setEditingWidget]     = useState<DashboardWidget | null>(null);
+  const [addingWidget, setAddingWidget]       = useState(false);
+  const [newWidgetType, setNewWidgetType]     = useState<WidgetType>('stat');
+  const [widgetConfigForm, setWidgetConfigForm] = useState<Record<string, unknown>>({});
+
+  // Sync from server
+  useEffect(() => {
+    if (dashConfig) setLocalWidgets(dashConfig.widgets);
+  }, [dashConfig]);
 
   // ── Category handlers ────────────────────────────────────────────────────
 
@@ -216,6 +275,96 @@ const Settings: React.FC = () => {
     }
   };
 
+  // ── Dashboard widget handlers ────────────────────────────────────────────
+
+  const moveWidget = (id: string, dir: 'up' | 'down') => {
+    const sorted = [...localWidgets].sort((a, b) => a.position - b.position);
+    const i = sorted.findIndex((w) => w.id === id);
+    const j = dir === 'up' ? i - 1 : i + 1;
+    if (j < 0 || j >= sorted.length) return;
+    [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
+    setLocalWidgets(sorted.map((w, k) => ({ ...w, position: k })));
+  };
+
+  const toggleWidget = (id: string) => {
+    setLocalWidgets((ws) => ws.map((w) => w.id === id ? { ...w, enabled: !w.enabled } : w));
+  };
+
+  const deleteWidget = (id: string) => {
+    const updated = localWidgets
+      .filter((w) => w.id !== id)
+      .sort((a, b) => a.position - b.position)
+      .map((w, i) => ({ ...w, position: i }));
+    setLocalWidgets(updated);
+  };
+
+  const openConfigure = (widget: DashboardWidget) => {
+    setEditingWidget(widget);
+    setWidgetConfigForm({
+      ...(widget.config as Record<string, unknown>),
+      __colSpan: widget.colSpan ?? 12,
+      __rowSpan: widget.rowSpan ?? 1,
+    });
+  };
+
+  const saveWidgetConfig = () => {
+    if (!editingWidget) return;
+    const colSpan = (widgetConfigForm.__colSpan as number | undefined) ?? editingWidget.colSpan;
+    const rowSpan = (widgetConfigForm.__rowSpan as number | undefined) ?? editingWidget.rowSpan;
+    // Strip internal keys before saving to config
+    const { __colSpan: _c, __rowSpan: _r, ...config } = widgetConfigForm;
+    setLocalWidgets((ws) =>
+      ws.map((w) =>
+        w.id === editingWidget.id
+          ? { ...w, colSpan, rowSpan, config: config as WidgetConfig }
+          : w
+      )
+    );
+    setEditingWidget(null);
+  };
+
+  const openAddWidget = () => {
+    setNewWidgetType('stat');
+    setAddingWidget(true);
+  };
+
+  const confirmAddWidget = () => {
+    const spans = DEFAULT_SPANS[newWidgetType];
+    const newWidget: DashboardWidget = {
+      id:       crypto.randomUUID(),
+      type:     newWidgetType,
+      enabled:  true,
+      position: localWidgets.length,
+      colSpan:  spans.colSpan,
+      rowSpan:  spans.rowSpan,
+      config:   DEFAULT_CONFIGS[newWidgetType],
+    };
+    setLocalWidgets((ws) => [...ws, newWidget]);
+    setAddingWidget(false);
+  };
+
+  const handleSaveDashboard = async () => {
+    const normalized = [...localWidgets]
+      .sort((a, b) => a.position - b.position)
+      .map((w, i) => ({ ...w, position: i }));
+    try {
+      await saveDashMutation.mutateAsync(normalized);
+      showSuccess('Dashboard layout saved.');
+    } catch {
+      showError('Failed to save dashboard layout.');
+    }
+  };
+
+  const handleResetDashboard = async () => {
+    if (!confirm('Reset dashboard to default layout?')) return;
+    try {
+      await resetDashMutation.mutateAsync();
+      showSuccess('Dashboard reset to defaults.');
+    } catch {
+      showError('Failed to reset dashboard.');
+    }
+  };
+
   // ── Derived ──────────────────────────────────────────────────────────────
 
   const customCategories = categories.filter((c) => !c.isSystem);
@@ -224,7 +373,13 @@ const Settings: React.FC = () => {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">Settings</h1>
+        <div>
+          <p className="page-eyebrow">Workspace controls</p>
+          <h1 className="page-title">Settings</h1>
+          <p className="page-description">
+            Manage categories, AI helpers, and account-level configuration for your finance workspace.
+          </p>
+        </div>
       </div>
 
       {/* Account Section */}
@@ -382,12 +537,97 @@ const Settings: React.FC = () => {
         )}
       </div>
 
+      {/* Dashboard Section */}
+      <div className="card settings-section">
+        <div className="settings-section-header">
+          <h2 className="settings-section-title">Dashboard</h2>
+          <Button variant="primary" size="sm" onClick={openAddWidget}>
+            <AppIcon name="spark" size={14} /> Add Widget
+          </Button>
+        </div>
+        <p className="text-muted settings-note" style={{ marginBottom: '1rem' }}>
+          Choose which charts and metrics appear on your dashboard, and drag them into order.
+        </p>
+
+        {dashLoading ? (
+          <LoadingSpinner centered />
+        ) : (
+          <>
+            {localWidgets.length === 0 ? (
+              <EmptyState
+                icon="📊"
+                title="No widgets"
+                description="Add a widget to get started."
+                actionLabel="Add Widget"
+                onAction={openAddWidget}
+              />
+            ) : (
+              <div className="category-list" style={{ gap: '0.5rem' }}>
+                {[...localWidgets]
+                  .sort((a, b) => a.position - b.position)
+                  .map((w, idx, arr) => {
+                    const label =
+                      (w.config as Record<string, unknown>).label as string ||
+                      (w.config as Record<string, unknown>).title as string ||
+                      WIDGET_TYPE_LABELS[w.type];
+                    return (
+                      <div
+                        key={w.id}
+                        className="category-item"
+                        style={{ padding: '0.6rem 0.75rem', gap: '0.6rem' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={w.enabled}
+                          onChange={() => toggleWidget(w.id)}
+                          style={{ width: '1rem', height: '1rem', cursor: 'pointer', flexShrink: 0 }}
+                        />
+                        <span className="badge badge-info" style={{ fontSize: '0.7rem', flexShrink: 0 }}>
+                          {w.type}
+                        </span>
+                        <span className="category-name" style={{ flex: 1 }}>{label}</span>
+                        <div style={{ display: 'flex', gap: '0.25rem' }}>
+                          <Button variant="ghost" size="sm" onClick={() => moveWidget(w.id, 'up')}  disabled={idx === 0}              title="Move up">↑</Button>
+                          <Button variant="ghost" size="sm" onClick={() => moveWidget(w.id, 'down')} disabled={idx === arr.length - 1} title="Move down">↓</Button>
+                          <Button variant="ghost" size="sm" onClick={() => openConfigure(w)} title="Configure">⚙️</Button>
+                          <Button variant="danger" size="sm" onClick={() => deleteWidget(w.id)} title="Delete">🗑️</Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+
+            <div className="form-actions" style={{ marginTop: '1.25rem' }}>
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={handleResetDashboard}
+                loading={resetDashMutation.isPending}
+              >
+                Reset to defaults
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={handleSaveDashboard}
+                loading={saveDashMutation.isPending}
+                style={{ marginLeft: 'auto' }}
+              >
+                Save Layout
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+
       {/* Categories Section */}
       <div className="card settings-section">
         <div className="settings-section-header">
           <h2 className="settings-section-title">Categories</h2>
           <Button variant="primary" size="sm" onClick={handleCatAdd}>
-            + Add Category
+            <AppIcon name="spark" size={14} /> Add Category
           </Button>
         </div>
 
@@ -446,6 +686,226 @@ const Settings: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Add Widget Modal */}
+      <Modal
+        isOpen={addingWidget}
+        onClose={() => setAddingWidget(false)}
+        title="Add Widget"
+        size="sm"
+      >
+        <div className="form">
+          <div className="form-group">
+            <label className="form-label" htmlFor="new-widget-type">Widget type</label>
+            <select
+              id="new-widget-type"
+              className="form-input"
+              value={newWidgetType}
+              onChange={(e) => setNewWidgetType(e.target.value as WidgetType)}
+            >
+              {(Object.keys(WIDGET_TYPE_LABELS) as WidgetType[]).map((t) => (
+                <option key={t} value={t}>{WIDGET_TYPE_LABELS[t]}</option>
+              ))}
+            </select>
+          </div>
+          <p className="text-muted" style={{ fontSize: '0.8rem' }}>
+            The widget will be added at the end of the list with default settings. You can configure it afterwards.
+          </p>
+          <div className="form-actions">
+            <Button type="button" variant="secondary" onClick={() => setAddingWidget(false)}>Cancel</Button>
+            <Button type="button" variant="primary" onClick={confirmAddWidget}>Add</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Configure Widget Modal */}
+      <Modal
+        isOpen={editingWidget !== null}
+        onClose={() => setEditingWidget(null)}
+        title={`Configure — ${editingWidget ? WIDGET_TYPE_LABELS[editingWidget.type] : ''}`}
+        size="sm"
+      >
+        {editingWidget && (
+          <div className="form">
+            {/* Layout span fields — always shown */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-group">
+                <label className="form-label" htmlFor="cfg-colspan">Col span (1–12)</label>
+                <input
+                  id="cfg-colspan"
+                  className="form-input"
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={(widgetConfigForm.__colSpan as number) ?? editingWidget.colSpan ?? 12}
+                  onChange={(e) => setWidgetConfigForm((f) => ({ ...f, __colSpan: Number(e.target.value) }))}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="cfg-rowspan">Row span (1–4)</label>
+                <input
+                  id="cfg-rowspan"
+                  className="form-input"
+                  type="number"
+                  min={1}
+                  max={4}
+                  value={(widgetConfigForm.__rowSpan as number) ?? editingWidget.rowSpan ?? 1}
+                  onChange={(e) => setWidgetConfigForm((f) => ({ ...f, __rowSpan: Number(e.target.value) }))}
+                />
+              </div>
+            </div>
+
+            {/* Stat widget fields */}
+            {editingWidget.type === 'stat' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="cfg-metric">Metric</label>
+                  <select
+                    id="cfg-metric"
+                    className="form-input"
+                    value={(widgetConfigForm.metric as string) ?? 'income'}
+                    onChange={(e) => setWidgetConfigForm((f) => ({ ...f, metric: e.target.value }))}
+                  >
+                    {(Object.keys(STAT_METRIC_LABELS) as StatMetric[]).map((m) => (
+                      <option key={m} value={m}>{STAT_METRIC_LABELS[m]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="cfg-label">Label</label>
+                  <input
+                    id="cfg-label"
+                    className="form-input"
+                    type="text"
+                    value={(widgetConfigForm.label as string) ?? ''}
+                    onChange={(e) => setWidgetConfigForm((f) => ({ ...f, label: e.target.value }))}
+                    placeholder="Display label"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Pie widget fields */}
+            {editingWidget.type === 'pie' && (
+              <div className="form-group">
+                <label className="form-label" htmlFor="cfg-title">Title</label>
+                <input
+                  id="cfg-title"
+                  className="form-input"
+                  type="text"
+                  value={(widgetConfigForm.title as string) ?? ''}
+                  onChange={(e) => setWidgetConfigForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="Chart title"
+                />
+              </div>
+            )}
+
+            {/* Line / Bar widget fields */}
+            {(editingWidget.type === 'line' || editingWidget.type === 'bar') && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="cfg-months">Months to show</label>
+                  <input
+                    id="cfg-months"
+                    className="form-input"
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={(widgetConfigForm.months as number) ?? 6}
+                    onChange={(e) => setWidgetConfigForm((f) => ({ ...f, months: Number(e.target.value) }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="cfg-title-trend">Title</label>
+                  <input
+                    id="cfg-title-trend"
+                    className="form-input"
+                    type="text"
+                    value={(widgetConfigForm.title as string) ?? ''}
+                    onChange={(e) => setWidgetConfigForm((f) => ({ ...f, title: e.target.value }))}
+                    placeholder="Chart title"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Table widget fields */}
+            {editingWidget.type === 'table' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="cfg-source">Data source</label>
+                  <select
+                    id="cfg-source"
+                    className="form-input"
+                    value={(widgetConfigForm.source as string) ?? 'recent_transactions'}
+                    onChange={(e) => setWidgetConfigForm((f) => ({ ...f, source: e.target.value }))}
+                  >
+                    <option value="recent_transactions">Recent transactions</option>
+                    <option value="top_categories">Top spending categories</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="cfg-limit">Row limit</label>
+                  <input
+                    id="cfg-limit"
+                    className="form-input"
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={(widgetConfigForm.limit as number) ?? 10}
+                    onChange={(e) => setWidgetConfigForm((f) => ({ ...f, limit: Number(e.target.value) }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="cfg-title-table">Title</label>
+                  <input
+                    id="cfg-title-table"
+                    className="form-input"
+                    type="text"
+                    value={(widgetConfigForm.title as string) ?? ''}
+                    onChange={(e) => setWidgetConfigForm((f) => ({ ...f, title: e.target.value }))}
+                    placeholder="Table title"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Bank breakdown widget fields */}
+            {editingWidget.type === 'bank_breakdown' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="cfg-bb-limit">Categories to show</label>
+                  <input
+                    id="cfg-bb-limit"
+                    className="form-input"
+                    type="number"
+                    min={2}
+                    max={12}
+                    value={(widgetConfigForm.limit as number) ?? 6}
+                    onChange={(e) => setWidgetConfigForm((f) => ({ ...f, limit: Number(e.target.value) }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="cfg-bb-title">Title</label>
+                  <input
+                    id="cfg-bb-title"
+                    className="form-input"
+                    type="text"
+                    value={(widgetConfigForm.title as string) ?? ''}
+                    onChange={(e) => setWidgetConfigForm((f) => ({ ...f, title: e.target.value }))}
+                    placeholder="Widget title"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="form-actions">
+              <Button type="button" variant="secondary" onClick={() => setEditingWidget(null)}>Cancel</Button>
+              <Button type="button" variant="primary" onClick={saveWidgetConfig}>Apply</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Category Modal */}
       <Modal

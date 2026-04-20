@@ -12,6 +12,9 @@ router.get('/', TransactionsController.list);
 // POST /api/transactions
 router.post('/', TransactionsController.create);
 
+// POST /api/transactions/auto-classify
+router.post('/auto-classify', TransactionsController.autoClassify);
+
 // PATCH /api/transactions/:id
 router.patch('/:id', TransactionsController.update);
 

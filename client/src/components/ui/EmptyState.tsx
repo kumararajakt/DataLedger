@@ -2,7 +2,7 @@ import React from 'react';
 import Button from './Button';
 
 interface EmptyStateProps {
-  icon?: string;
+  icon?: React.ReactNode;
   title: string;
   description?: string;
   actionLabel?: string;
@@ -10,7 +10,7 @@ interface EmptyStateProps {
 }
 
 const EmptyState: React.FC<EmptyStateProps> = ({
-  icon = '📭',
+  icon = '•',
   title,
   description,
   actionLabel,

@@ -23,13 +23,19 @@ const TransactionFilter: React.FC<TransactionFilterProps> = ({
     filters.search;
 
   return (
-    <div className="filter-bar">
-      <div className="filter-row">
+    <div className="card filter-panel">
+      <div className="card-header">
+        <div>
+          <p className="card-eyebrow">Filters</p>
+          <h2 className="card-title">Refine the ledger</h2>
+        </div>
+      </div>
+      <div className="filter-row filter-grid">
         <div className="filter-group">
           <label className="form-label">From</label>
           <input
             type="date"
-            className="form-input form-input-sm"
+            className="form-input"
             value={filters.dateFrom || ''}
             onChange={(e) => onChange({ ...filters, dateFrom: e.target.value, page: 1 })}
           />
@@ -38,7 +44,7 @@ const TransactionFilter: React.FC<TransactionFilterProps> = ({
           <label className="form-label">To</label>
           <input
             type="date"
-            className="form-input form-input-sm"
+            className="form-input"
             value={filters.dateTo || ''}
             onChange={(e) => onChange({ ...filters, dateTo: e.target.value, page: 1 })}
           />
@@ -46,7 +52,7 @@ const TransactionFilter: React.FC<TransactionFilterProps> = ({
         <div className="filter-group">
           <label className="form-label">Category</label>
           <select
-            className="form-input form-input-sm"
+            className="form-input"
             value={filters.categoryId || ''}
             onChange={(e) =>
               onChange({ ...filters, categoryId: e.target.value, page: 1 })
@@ -63,7 +69,7 @@ const TransactionFilter: React.FC<TransactionFilterProps> = ({
         <div className="filter-group">
           <label className="form-label">Type</label>
           <select
-            className="form-input form-input-sm"
+            className="form-input"
             value={filters.type || ''}
             onChange={(e) =>
               onChange({
@@ -83,7 +89,7 @@ const TransactionFilter: React.FC<TransactionFilterProps> = ({
           <label className="form-label">Search</label>
           <input
             type="text"
-            className="form-input form-input-sm"
+            className="form-input"
             placeholder="Search description..."
             value={filters.search || ''}
             onChange={(e) => onChange({ ...filters, search: e.target.value, page: 1 })}
@@ -91,8 +97,8 @@ const TransactionFilter: React.FC<TransactionFilterProps> = ({
         </div>
         {hasActiveFilters && (
           <div className="filter-group filter-action">
-            <label className="form-label">&nbsp;</label>
-            <Button variant="ghost" size="sm" onClick={onClear}>
+            <label className="form-label">Reset</label>
+            <Button variant="ghost" onClick={onClear}>
               Clear Filters
             </Button>
           </div>

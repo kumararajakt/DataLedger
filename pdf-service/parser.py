@@ -2,9 +2,10 @@
 PDF Parser Orchestration Module
 
 Parsing pipeline (in order):
-1. ML parser   — KMeans clustering on word x-coordinates to find column positions
-2. Table parser — pdfplumber header-mapped structured table extraction
-3. Camelot     — fallback for PDFs that pdfplumber can't table-extract
+1. Docling     — IBM ML model (TableFormer) for table structure recognition
+2. ML parser   — KMeans clustering on word x-coordinates to find column positions
+3. Table parser — pdfplumber header-mapped structured table extraction
+4. Camelot     — fallback for PDFs that pdfplumber can't table-extract
 """
 
 import logging
@@ -18,6 +19,7 @@ import pdfplumber
 from banks.utils import parse_date, parse_amount, clean_description, validate_balance_continuity
 from banks.table_parser import parse_table
 from ml_parser import parse_with_ml
+from docling_parser import parse_with_docling
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,19 @@ def parse_pdf(
                 return _error("OCR parsing failed", page_count)
         return _error("Scanned PDF detected. Enable OCR to process.", page_count)
 
-    # ── Strategy 1: ML parser ─────────────────────────────────────────────
+    # ── Strategy 1: Docling (TableFormer vision model) ────────────────────
+    # Uses IBM's TableFormer model to detect table regions and cell structure.
+    # For digital PDFs it reads the embedded text layer (no OCR), so it's fast
+    # and accurate. Multi-line cells are merged correctly by the model.
+    try:
+        transactions = parse_with_docling(pdf_bytes)
+        if transactions:
+            logger.info(f"Docling extracted {len(transactions)} transactions")
+            return _result(transactions, "docling", page_count)
+    except Exception as e:
+        logger.error(f"Docling failed: {e}")
+
+    # ── Strategy 2: ML parser ─────────────────────────────────────────────
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             transactions = parse_with_ml(pdf)
@@ -140,8 +154,8 @@ def parse_pdf(
 _COL_KEYWORDS = {
     "date":        ["transaction date", "txn date", "tran date", "value date", "date"],
     "description": ["transaction remarks", "remarks", "narration", "particulars", "description"],
-    "debit":       ["withdrawal amount", "withdrawal (inr)", "withdrawal amt", "debit amount", "debit", "dr"],
-    "credit":      ["deposit amount", "deposit (inr)", "deposit amt", "credit amount", "credit", "cr"],
+    "debit":       ["withdrawal amount", "withdrawal (inr)", "withdrawal amt", "withdrawals", "debit amount", "debit", "dr"],
+    "credit":      ["deposit amount", "deposit (inr)", "deposit amt", "deposits", "credit amount", "credit", "cr"],
     "balance":     ["closing balance", "available balance", "balance"],
 }
 

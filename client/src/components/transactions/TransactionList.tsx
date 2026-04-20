@@ -77,7 +77,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
       {totalPages > 1 && (
         <div className="pagination">
-          <span className="pagination-info">
+          <span className="pagination-info text-muted">
             Showing {start}–{end} of {total}
           </span>
           <div className="pagination-controls">
